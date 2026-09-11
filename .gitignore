@@ -4,3 +4,10 @@
 *.ptx
 *.cubin
 *.fatbin
+.DS_Store
+.code/
+.idea/
+*.swap
+build/
+results_*/
+.cache/
