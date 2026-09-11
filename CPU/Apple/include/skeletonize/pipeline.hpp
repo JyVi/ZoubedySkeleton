@@ -39,3 +39,7 @@ constexpr std::array<AnchorConfig, 9> generate_anchor_configs(int stride_y,
 // Get the neighborhood of a 3d volume voxel
 uint32_t get_neighborhood(std::span<uint8_t> volume_array, int voxPosition,
                           std::span<const AnchorConfig, 9> precomputed_configs);
+
+// Returns true if the voxel is an endpoint (exactly 1 neighbor + the center
+// voxel)
+bool is_endpoint(uint32_t packed_neighborhood);
