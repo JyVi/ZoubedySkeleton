@@ -39,12 +39,13 @@ constexpr std::array<AnchorConfig, 9> generate_anchor_configs(int stride_y,
 }
 
 // Get the neighborhood of a 3d volume voxel
-uint32_t get_neighborhood(std::span<uint8_t> volume_array, int voxPosition,
-                          std::span<const AnchorConfig, 9> precomputed_configs);
+uint32_t
+get_neighborhood(const std::span<const uint8_t> volume_array, int voxPosition,
+                 const std::array<AnchorConfig, 9> &precomputed_configs);
 
 // Returns true if the voxel is an endpoint (exactly 1 neighbor + the center
 // voxel)
-bool is_endpoint(uint32_t packed_neighborhood);
+bool is_endpoint(const uint32_t packed_neighborhood);
 
 // Generate the adjency masks array so that the bfs can just check the supposed
 // bits that supposed neighboring the packed_neighborhood.
@@ -95,4 +96,18 @@ constexpr auto ADJACENCY_MASKS = generate_adjacency_masks();
 // BFS rewrite of the Octant method from the Lee94 paper with the bitpacking
 // trick.
 bool is_simple_point(const uint32_t packed_neighborhood);
+
+void find_simple_point_candidates(
+    std::span<const uint8_t> img, std::vector<uint32_t> &candidates,
+    const std::array<AnchorConfig, 9> &anchor_configs, const uint32_t D,
+    const uint32_t H, const uint32_t W, const int64_t b_offset);
+
+int sequential_recheck(std::span<uint8_t> img,
+                       std::vector<uint32_t> &candidates,
+                       const std::array<AnchorConfig, 9> &anchor_configs);
+
+// Lee94 skeleton, img is supposed to be padded before.
+// Will need top hat function to  pad it.
+void compute_thin_image(std::span<uint8_t> img, const uint32_t D,
+                        const uint32_t H, const uint32_t W);
 } // namespace skel
