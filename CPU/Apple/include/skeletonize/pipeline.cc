@@ -1,6 +1,7 @@
-#include "pipeline.hpp"
-#include "LUT.hpp"
+#include "skeletonize/pipeline.hpp"
+#include "skeletonize/lut.hpp"
 #include <array>
+#include <vector>
 #include <bit>
 #include <cstdint>
 #include <ranges>
@@ -40,7 +41,7 @@ bool skel::is_simple_point(const uint32_t packed_neighborhood) {
   if (shell == 0)
     return true;
 
-  int seed = std::countl_zero(shell);
+  int seed = std::countr_zero(shell);
   uint32_t frontier = (1u << seed);
 
   // mark the seed as visited in the shell

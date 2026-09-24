@@ -1,13 +1,12 @@
 #include <algorithm>
 #include <iostream>
 #include <string>
-//#include "include/skeletonize/lut.hpp"
+#include "skeletonize/lut.hpp"
+#include "skeletonize/pipeline.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <numeric>
 #include <ranges>
-#include <utility>
 
 
 constexpr std::array<int8_t, 256> generate_Euler_LUT() {

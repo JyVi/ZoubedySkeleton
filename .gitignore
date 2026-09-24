@@ -9,5 +9,7 @@
 .idea/
 *.swap
 build/
+build*/
 results_*/
 .cache/
+compile_commands.json
