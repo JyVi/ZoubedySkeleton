@@ -3,7 +3,6 @@
 #include <array>
 #include <vector>
 #include <cstdint>
-#include <cstring>
 #include <span>
 
 namespace skel {
@@ -23,7 +22,7 @@ struct AnchorConfig {
 // and for the z axis it would be width * height.
 // I have no stride for x specifically here, I assume 1.
 // I am loading 4 bytes at a time so X axis is just -1
-constexpr std::array<AnchorConfig, 9> generate_anchor_configs(int stride_y,
+constexpr std::array<AnchorConfig, 9> generate_anchor_configs_old(int stride_y,
                                                               int stride_z) {
   std::array<AnchorConfig, 9> configs{};
   int idx = 0;
@@ -39,11 +38,33 @@ constexpr std::array<AnchorConfig, 9> generate_anchor_configs(int stride_y,
   return configs;
 }
 
+constexpr std::array<AnchorConfig, 9> generate_anchor_configs(int stride_y, int stride_z) {
+  std::array<AnchorConfig, 9> configs{};
+  int idx = 0;
+
+  for (int dz = -1; dz <= 1; ++dz) {
+    for (int dy = -1; dy <= 1; ++dy) {
+      int mem_offset = (dz * stride_z) + (dy * stride_y) - 1; // Points to dx=-1
+
+      // Cython base index for this Z,Y plane
+      int base_cython_idx = (dz + 1) * 9 + (dy + 1) * 3;
+
+      // Bits should be base, base+1, base+2
+      configs[idx++] = {
+          mem_offset,
+          base_cython_idx,     // bit_x corresponds to dx=-1
+          base_cython_idx + 1, // bit_y corresponds to dx=0
+          base_cython_idx + 2  // bit_z corresponds to dx=1
+      };
+    }
+  }
+  return configs;
+}
+
 // Get the neighborhood of a 3d volume voxel
 uint32_t
 get_neighborhood(const std::span<const uint8_t> volume_array, int voxPosition,
                  const std::array<AnchorConfig, 9> &precomputed_configs);
-
 // Returns true if the voxel is an endpoint (exactly 1 neighbor + the center
 // voxel)
 bool is_endpoint(const uint32_t packed_neighborhood);
@@ -103,12 +124,17 @@ void find_simple_point_candidates(
     const std::array<AnchorConfig, 9> &anchor_configs, const uint32_t D,
     const uint32_t H, const uint32_t W, const int64_t b_offset);
 
+// Version of simple point detetion with loading more data at once
+void find_simple_point_candidates_Byte4(
+    std::span<const uint8_t> img, std::vector<uint32_t> &candidates,
+    const std::array<AnchorConfig, 9> &anchor_configs, const uint32_t D,
+    const uint32_t H, const uint32_t W, const int64_t b_offset);
+
 int sequential_recheck(std::span<uint8_t> img,
                        std::vector<uint32_t> &candidates,
                        const std::array<AnchorConfig, 9> &anchor_configs);
 
 // Lee94 skeleton, img is supposed to be padded before.
-// Will need top hat function to  pad it.
 void compute_thin_image(std::span<uint8_t> img, const uint32_t D,
                         const uint32_t H, const uint32_t W);
 } // namespace skel

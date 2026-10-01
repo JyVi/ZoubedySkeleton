@@ -1,33 +1,32 @@
 #include "skeletonize/pipeline.hpp"
 #include "skeletonize/lut.hpp"
 #include <array>
-#include <vector>
 #include <bit>
 #include <cstdint>
 #include <ranges>
 #include <span>
 #include <sys/types.h>
+#include <vector>
 
-uint32_t skel::get_neighborhood(
-    const std::span<const uint8_t> volume_array, int voxPosition,
-    const std::array<AnchorConfig, 9> &precomputed_configs) {
+uint32_t skel::get_neighborhood(const std::span<const uint8_t> volume_array,
+                                int voxPosition,
+                                const std::array<AnchorConfig, 9> &precomputed_configs) {
+    uint32_t neighborhood = 0;
+    for (const auto &config : precomputed_configs) {
+        const uint8_t *computed_anchor = volume_array.data() + voxPosition + config.mem_offset;
 
-  uint32_t neighborhood = 0;
-  for (const auto &config : precomputed_configs) {
-    const uint8_t *computed_anchor =
-        volume_array.data() + voxPosition + config.mem_offset;
+        // This is like in CUDA, I load 4 uint8_t in one pass rather than just one
+        Byte4 chunk;
+        // No real deepcopy, it is just necessary to store the memory to my struct
+        std::memcpy(&chunk, computed_anchor, sizeof(Byte4));
 
-    // This is like in CUDA, I load 4 uint8_t in one pass rather than just one
-    Byte4 chunk;
-    // No real deepcopy, it is just necessary to store the memory to my struct
-    std::memcpy(&chunk, computed_anchor, sizeof(Byte4));
-
-    // Banchless packing at the valid and required place by the LUT computation
-    neighborhood |= (chunk.x ? 1u : 0u) << config.bit_x;
-    neighborhood |= (chunk.y ? 1u : 0u) << config.bit_y;
-    neighborhood |= (chunk.z ? 1u : 0u) << config.bit_z;
-  }
-  return neighborhood;
+        // Shift to the EXACT Cython indices
+        // Banchless packing at the valid and required place by the LUT computation
+        neighborhood |= (static_cast<uint32_t>(chunk.x) << config.bit_x);
+        neighborhood |= (static_cast<uint32_t>(chunk.y) << config.bit_y);
+        neighborhood |= (static_cast<uint32_t>(chunk.z) << config.bit_z);
+    }
+    return neighborhood;
 }
 
 bool skel::is_endpoint(const uint32_t packed_neighborhood) {
@@ -48,7 +47,7 @@ bool skel::is_simple_point(const uint32_t packed_neighborhood) {
   shell &= ~frontier;
 
   while (frontier != 0) {
-    int current = std::countl_zero(frontier);
+    int current = std::countr_zero(frontier);
     // Dequeue the neighbors
     frontier &= ~(1u << current);
 
@@ -99,6 +98,86 @@ void skel::find_simple_point_candidates(
   }
 }
 
+void skel::find_simple_point_candidates_Byte4(
+    std::span<const uint8_t> img, std::vector<uint32_t> &candidates,
+    const std::array<AnchorConfig, 9> &anchor_configs, const uint32_t D,
+    const uint32_t H, const uint32_t W, const int64_t b_offset) {
+  uint32_t stride_y = W;
+  uint32_t stride_z = W * H;
+  // Padded img, so from 1 to size-1
+  for (uint32_t d : std::views::iota(1u, D - 1)) {
+    uint32_t d_offset = d * stride_z;
+
+    for (uint32_t h : std::views::iota(1u, H - 1)) {
+      // Create a range to iterate over.
+      uint32_t row_start = d_offset + (h * stride_y) + 1;
+      uint32_t row_end = row_start + (W - 2);
+      uint32_t row_chunks = (row_end - row_start) / 4;
+
+      for (uint32_t i : std::views::iota(0u, row_chunks)) {
+        uint32_t chunk_idx = row_start + i * 4;
+        Byte4 chunk;
+        Byte4 offset_chunk;
+        std::memcpy(&chunk, &img[chunk_idx], sizeof(Byte4));
+        std::memcpy(&offset_chunk, &img[chunk_idx + b_offset], sizeof(Byte4));
+
+        // fast 4 bytes skip
+        if (std::bit_cast<uint32_t>(chunk) == 0)
+          continue;
+        if (std::bit_cast<uint32_t>(offset_chunk) == 0x01010101)
+          continue;
+
+        if (chunk.x == 1 && offset_chunk.x == 0) {
+          uint32_t packed =
+              get_neighborhood(img, chunk_idx + 0, anchor_configs);
+          if (!is_endpoint(packed) && is_euler_invariant(packed) &&
+              is_simple_point(packed))
+            candidates.emplace_back(chunk_idx + 0);
+        }
+        if (chunk.y == 1 && offset_chunk.y == 0) {
+          uint32_t packed =
+              get_neighborhood(img, chunk_idx + 1, anchor_configs);
+          if (!is_endpoint(packed) && is_euler_invariant(packed) &&
+              is_simple_point(packed))
+            candidates.emplace_back(chunk_idx + 1);
+        }
+        if (chunk.z == 1 && offset_chunk.z == 0) {
+          uint32_t packed =
+              get_neighborhood(img, chunk_idx + 2, anchor_configs);
+          if (!is_endpoint(packed) && is_euler_invariant(packed) &&
+              is_simple_point(packed))
+            candidates.emplace_back(chunk_idx + 2);
+        }
+        if (chunk.overflow_value == 1 && offset_chunk.overflow_value == 0) {
+          uint32_t packed =
+              get_neighborhood(img, chunk_idx + 3, anchor_configs);
+          if (!is_endpoint(packed) && is_euler_invariant(packed) &&
+              is_simple_point(packed))
+            candidates.emplace_back(chunk_idx + 3);
+        }
+      }
+      uint32_t tail_start = row_start + (row_chunks * 4);
+      for (uint32_t i : std::views::iota(tail_start, row_end)) {
+        if (img[i] != 1)
+          continue;
+        if (img[i + b_offset] != 0)
+          continue;
+
+        uint32_t packed = get_neighborhood(img, i, anchor_configs);
+
+        if (is_endpoint(packed))
+          continue;
+        if (!is_euler_invariant(packed))
+          continue;
+        if (!is_simple_point(packed))
+          continue;
+
+        candidates.emplace_back(i);
+      }
+    }
+  }
+}
+
 int skel::sequential_recheck(
     std::span<uint8_t> img, std::vector<uint32_t> &candidates,
     const std::array<AnchorConfig, 9> &anchor_configs) {
@@ -111,7 +190,7 @@ int skel::sequential_recheck(
       no_change = false;
     }
   }
-  return no_change ? 0 : 1;
+  return no_change ? 1 : 0;
 }
 
 void skel::compute_thin_image(std::span<uint8_t> img, const uint32_t D,
@@ -121,6 +200,7 @@ void skel::compute_thin_image(std::span<uint8_t> img, const uint32_t D,
   uint32_t total_voxels = D * H * W;
   const auto anchor_configs = generate_anchor_configs(stride_y, stride_z);
   constexpr std::array<int, 6> borders = {4, 3, 2, 1, 5, 6};
+  //constexpr std::array<int, 6> borders = {1, 2, 4, 3, 6, 5};
   const std::array<int64_t, 7> border_offsets = {
       0,                               // 0: unused
       -1,                              // 1: X-1 (North)
@@ -142,7 +222,7 @@ void skel::compute_thin_image(std::span<uint8_t> img, const uint32_t D,
       int64_t b_offset = border_offsets[border];
       candidates.clear();
       // Pass 1
-      find_simple_point_candidates(img, candidates, anchor_configs, D, H, W,
+      find_simple_point_candidates_Byte4(img, candidates, anchor_configs, D, H, W,
                                    b_offset);
       // Pass 2
       unchanged_borders += sequential_recheck(img, candidates, anchor_configs);
