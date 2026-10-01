@@ -13,3 +13,6 @@ build*/
 results_*/
 .cache/
 compile_commands.json
+*.xz
+*.nii
+*.html
