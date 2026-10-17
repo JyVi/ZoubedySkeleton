@@ -11,6 +11,7 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 include(FetchContent)
+find_package(Threads)
 
 FetchContent_Declare(
     perfetto_sdk
@@ -28,8 +29,25 @@ target_include_directories(perfetto PUBLIC
 )
 
 target_compile_features(perfetto PUBLIC cxx_std_17)
+target_link_libraries(perfetto PUBLIC Threads::Threads)
+
+FetchContent_Declare(
+    bshoshany_thread_pool
+    GIT_REPOSITORY https://github.com/bshoshany/thread-pool.git
+    GIT_TAG v5.1.0
+    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    EXCLUDE_FROM_ALL
+    SYSTEM
+)
+FetchContent_MakeAvailable(bshoshany_thread_pool)
+add_library(BS_thread_pool INTERFACE)
+target_include_directories(BS_thread_pool INTERFACE ${bshoshany_thread_pool_SOURCE_DIR}/include)
+
+#add_executable(${PROJECT_NAME} ${bshoshany_thread_pool_SOURCE_DIR}/tests/BS_thread_pool_test.cpp)
 
 add_library(skeletonize_core STATIC
+    include/skeletonize/perfetto_tracing.hpp
+    include/skeletonize/perfetto_tracing.cc
     include/skeletonize/pipeline.hpp
     include/skeletonize/pipeline.cc
     include/skeletonize/lut.hpp
@@ -50,9 +68,13 @@ target_compile_options(skeletonize_core PRIVATE
 
 )
 
-target_link_libraries(skeletonize_core PRIVATE
+#target_link_options(skeletonize_core PRIVATE
+#    $<$<CONFIG:Release>:-fsanitize=address>
+#)
+target_link_libraries(skeletonize_core PUBLIC
   perfetto
 )
+target_link_libraries(skeletonize_core PUBLIC BS_thread_pool)
 
 option(BUILD_PYTHON_BINDINGS "Build Python bindings" ON)
 if(BUILD_PYTHON_BINDINGS)

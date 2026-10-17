@@ -1,5 +1,6 @@
 #include "skeletonize/pipeline.hpp"
 #include "skeletonize/lut.hpp"
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cstdint>
@@ -8,25 +9,27 @@
 #include <sys/types.h>
 #include <vector>
 
-uint32_t skel::get_neighborhood(const std::span<const uint8_t> volume_array,
-                                int voxPosition,
-                                const std::array<AnchorConfig, 9> &precomputed_configs) {
-    uint32_t neighborhood = 0;
-    for (const auto &config : precomputed_configs) {
-        const uint8_t *computed_anchor = volume_array.data() + voxPosition + config.mem_offset;
+uint32_t
+skel::get_neighborhood(const std::span<const uint8_t> volume_array,
+                       int voxPosition,
+                       const std::array<AnchorConfig, 9> &precomputed_configs) {
+  uint32_t neighborhood = 0;
+  for (const auto &config : precomputed_configs) {
+    const uint8_t *computed_anchor =
+        volume_array.data() + voxPosition + config.mem_offset;
 
-        // This is like in CUDA, I load 4 uint8_t in one pass rather than just one
-        Byte4 chunk;
-        // No real deepcopy, it is just necessary to store the memory to my struct
-        std::memcpy(&chunk, computed_anchor, sizeof(Byte4));
+    // This is like in CUDA, I load 4 uint8_t in one pass rather than just one
+    Byte4 chunk;
+    // No real deepcopy, it is just necessary to store the memory to my struct
+    std::memcpy(&chunk, computed_anchor, sizeof(Byte4));
 
-        // Shift to the EXACT Cython indices
-        // Banchless packing at the valid and required place by the LUT computation
-        neighborhood |= (static_cast<uint32_t>(chunk.x) << config.bit_x);
-        neighborhood |= (static_cast<uint32_t>(chunk.y) << config.bit_y);
-        neighborhood |= (static_cast<uint32_t>(chunk.z) << config.bit_z);
-    }
-    return neighborhood;
+    // Shift to the EXACT Cython indices
+    // Banchless packing at the valid and required place by the LUT computation
+    neighborhood |= (static_cast<uint32_t>(chunk.x) << config.bit_x);
+    neighborhood |= (static_cast<uint32_t>(chunk.y) << config.bit_y);
+    neighborhood |= (static_cast<uint32_t>(chunk.z) << config.bit_z);
+  }
+  return neighborhood;
 }
 
 bool skel::is_endpoint(const uint32_t packed_neighborhood) {
@@ -104,7 +107,10 @@ void skel::find_simple_point_candidates_Byte4(
     const uint32_t H, const uint32_t W, const int64_t b_offset) {
   uint32_t stride_y = W;
   uint32_t stride_z = W * H;
-  // Padded img, so from 1 to size-1
+
+  uint32_t chunk_skip = 0;
+  uint32_t offset_chunk_skip = 0;
+
   for (uint32_t d : std::views::iota(1u, D - 1)) {
     uint32_t d_offset = d * stride_z;
 
@@ -176,6 +182,7 @@ void skel::find_simple_point_candidates_Byte4(
       }
     }
   }
+  std::sort(candidates.begin(), candidates.end());
 }
 
 int skel::sequential_recheck(
@@ -200,7 +207,7 @@ void skel::compute_thin_image(std::span<uint8_t> img, const uint32_t D,
   uint32_t total_voxels = D * H * W;
   const auto anchor_configs = generate_anchor_configs(stride_y, stride_z);
   constexpr std::array<int, 6> borders = {4, 3, 2, 1, 5, 6};
-  //constexpr std::array<int, 6> borders = {1, 2, 4, 3, 6, 5};
+  // constexpr std::array<int, 6> borders = {1, 2, 4, 3, 6, 5};
   const std::array<int64_t, 7> border_offsets = {
       0,                               // 0: unused
       -1,                              // 1: X-1 (North)
@@ -212,8 +219,10 @@ void skel::compute_thin_image(std::span<uint8_t> img, const uint32_t D,
   };
   const int num_borders = (D == 3) ? 4 : 6;
   std::vector<uint32_t> candidates;
-  candidates.reserve(total_voxels / 10);
+  candidates.reserve(stride_z);
   int unchanged_borders = 0;
+  constexpr uint8_t Byte4PerUnit = 4;
+  constexpr uint32_t bytes_per_unit = Byte4PerUnit * 4;
 
   while (unchanged_borders < num_borders) {
     unchanged_borders = 0;
@@ -222,8 +231,14 @@ void skel::compute_thin_image(std::span<uint8_t> img, const uint32_t D,
       int64_t b_offset = border_offsets[border];
       candidates.clear();
       // Pass 1
-      find_simple_point_candidates_Byte4(img, candidates, anchor_configs, D, H, W,
-                                   b_offset);
+      find_simple_point_candidates_Byte4(img, candidates, anchor_configs, D, H,
+                                         W, b_offset);
+      //find_simple_point_candidates_Iteratite_preParallel_Byte4<Byte4PerUnit, bytes_per_unit>(img, candidates, anchor_configs, D, H,
+      //    W, b_offset);
+      // find_simple_point_candidates_Byte4_prepara(img, candidates, anchor_configs, D, H,
+      //                                           W, b_offset);
+      // find_simple_point_candidates_Iterative_Byte4(img, candidates, anchor_configs, D, H,
+      //                                           W, b_offset);
       // Pass 2
       unchanged_borders += sequential_recheck(img, candidates, anchor_configs);
     }
