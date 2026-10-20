@@ -13,10 +13,8 @@ endif()
 include(FetchContent)
 find_package(Threads)
 
-FetchContent_Declare(
-    perfetto_sdk
-    URL https://github.com/google/perfetto/releases/download/v58.2/perfetto-cpp-sdk-src.zip
-)
+FetchContent_Declare(perfetto_sdk URL
+                     https://github.com/google/perfetto/releases/download/v58.2/perfetto-cpp-sdk-src.zip)
 
 FetchContent_MakeAvailable(perfetto_sdk)
 
@@ -41,9 +39,8 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(bshoshany_thread_pool)
 add_library(BS_thread_pool INTERFACE)
-target_include_directories(BS_thread_pool INTERFACE ${bshoshany_thread_pool_SOURCE_DIR}/include)
-
-#add_executable(${PROJECT_NAME} ${bshoshany_thread_pool_SOURCE_DIR}/tests/BS_thread_pool_test.cpp)
+target_include_directories(BS_thread_pool INTERFACE
+                           ${bshoshany_thread_pool_SOURCE_DIR}/include)
 
 add_library(skeletonize_core STATIC
     include/skeletonize/perfetto_tracing.hpp
@@ -51,6 +48,12 @@ add_library(skeletonize_core STATIC
     include/skeletonize/pipeline.hpp
     include/skeletonize/pipeline.cc
     include/skeletonize/lut.hpp
+    include/skeletonize/helpers.cc
+    include/skeletonize/helpers.hpp
+    include/skeletonize/pipeline_multi_thread.cc
+    include/skeletonize/pipeline_multi_thread.hpp
+    include/skeletonize/pipeline_single_thread.cc
+    include/skeletonize/pipeline_single_thread.hpp
 )
 
 target_include_directories(skeletonize_core PUBLIC
@@ -58,19 +61,24 @@ target_include_directories(skeletonize_core PUBLIC
 )
 
 target_compile_options(skeletonize_core PRIVATE
-    # Debug: No optimization, full debug symbols, enable all warnings
-    $<$<CONFIG:Debug>:-O0 -g3 -Wall -Wextra -Werror -Wpedantic>
+                       # Debug: No optimization, full debug symbols,
+                       # enable all warnings
+                       $<$<CONFIG:Debug>:-O0 -g3 -Wall -Wextra -Werror
+                       -Wpedantic>
+                       # Release: Maximum optimization, native CPU instructions,
+                       # disable asserts
+                       $<$<CONFIG:Release>:-O3 -march=native -ffast-math
+                       -DNDEBUG -fexperimental-library> #-fsanitize=thread>
+                       $<$<CONFIG:RelWithDebInfo>:-O0 -g -fno-inline
+                       -fno-omit-frame-pointer -DNDEBUG>)
 
-    # Release: Maximum optimization, native CPU instructions, disable asserts
-    $<$<CONFIG:Release>:-O3 -march=native -ffast-math -DNDEBUG>
-
-    $<$<CONFIG:RelWithDebInfo>:-O0 -g -fno-inline -fno-omit-frame-pointer -DNDEBUG>
-
+#target_link_options(skeletonize_core INTERFACE
+#    $<$<CONFIG:Release>:-fsanitize=thread>
+#)
+target_link_options(skeletonize_core INTERFACE
+    $<$<CONFIG:Release>:-fexperimental-library>
 )
 
-#target_link_options(skeletonize_core PRIVATE
-#    $<$<CONFIG:Release>:-fsanitize=address>
-#)
 target_link_libraries(skeletonize_core PUBLIC
   perfetto
 )
@@ -96,3 +104,7 @@ endif()
 
 add_executable(skeletonize_app src/main.cc)
 target_link_libraries(skeletonize_app PRIVATE skeletonize_core)
+
+# This executable is the one used for debugging outside of python
+# add_executable(test_skeleton tests/Cpp/main.cpp)
+# target_link_libraries(test_skeleton PRIVATE skeletonize_core)

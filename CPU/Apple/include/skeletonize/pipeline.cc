@@ -1,204 +1,18 @@
 #include "skeletonize/pipeline.hpp"
 #include "skeletonize/lut.hpp"
+#include "skeletonize/helpers.hpp"
+#include "skeletonize/pipeline_multi_thread.hpp"
+#include "skeletonize/perfetto_tracing.hpp"
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <cstdint>
+#include <iostream>
 #include <ranges>
 #include <span>
 #include <sys/types.h>
 #include <vector>
-
-uint32_t
-skel::get_neighborhood(const std::span<const uint8_t> volume_array,
-                       int voxPosition,
-                       const std::array<AnchorConfig, 9> &precomputed_configs) {
-  uint32_t neighborhood = 0;
-  for (const auto &config : precomputed_configs) {
-    const uint8_t *computed_anchor =
-        volume_array.data() + voxPosition + config.mem_offset;
-
-    // This is like in CUDA, I load 4 uint8_t in one pass rather than just one
-    Byte4 chunk;
-    // No real deepcopy, it is just necessary to store the memory to my struct
-    std::memcpy(&chunk, computed_anchor, sizeof(Byte4));
-
-    // Shift to the EXACT Cython indices
-    // Banchless packing at the valid and required place by the LUT computation
-    neighborhood |= (static_cast<uint32_t>(chunk.x) << config.bit_x);
-    neighborhood |= (static_cast<uint32_t>(chunk.y) << config.bit_y);
-    neighborhood |= (static_cast<uint32_t>(chunk.z) << config.bit_z);
-  }
-  return neighborhood;
-}
-
-bool skel::is_endpoint(const uint32_t packed_neighborhood) {
-  return std::popcount(packed_neighborhood) == 2;
-}
-
-bool skel::is_simple_point(const uint32_t packed_neighborhood) {
-  uint32_t shell = packed_neighborhood & ~(1u << 13);
-
-  // no neighbors so simple point
-  if (shell == 0)
-    return true;
-
-  int seed = std::countr_zero(shell);
-  uint32_t frontier = (1u << seed);
-
-  // mark the seed as visited in the shell
-  shell &= ~frontier;
-
-  while (frontier != 0) {
-    int current = std::countr_zero(frontier);
-    // Dequeue the neighbors
-    frontier &= ~(1u << current);
-
-    uint32_t new_neighbors = ADJACENCY_MASKS[current] & shell;
-
-    // Enqueue the neighbors to the frontier
-    frontier |= new_neighbors;
-    shell &= ~new_neighbors;
-  }
-  return shell == 0;
-}
-
-void skel::find_simple_point_candidates(
-    std::span<const uint8_t> img, std::vector<uint32_t> &candidates,
-    const std::array<AnchorConfig, 9> &anchor_configs, const uint32_t D,
-    const uint32_t H, const uint32_t W, const int64_t b_offset) {
-
-  uint32_t stride_y = W;
-  uint32_t stride_z = W * H;
-  // Padded img, so from 1 to size-1
-  for (uint32_t d : std::views::iota(1u, D - 1)) {
-    uint32_t d_offset = d * stride_z;
-
-    for (uint32_t h : std::views::iota(1u, H - 1)) {
-      // Create a range to iterate over.
-      uint32_t row_start = d_offset + (h * stride_y) + 1;
-      uint32_t row_end = row_start + (W - 2);
-
-      for (uint32_t i : std::views::iota(row_start, row_end)) {
-
-        if (img[i] != 1)
-          continue;
-        if (img[i + b_offset] != 0)
-          continue;
-
-        uint32_t packed = get_neighborhood(img, i, anchor_configs);
-
-        if (is_endpoint(packed))
-          continue;
-        if (!is_euler_invariant(packed))
-          continue;
-        if (!is_simple_point(packed))
-          continue;
-
-        candidates.emplace_back(i);
-      }
-    }
-  }
-}
-
-void skel::find_simple_point_candidates_Byte4(
-    std::span<const uint8_t> img, std::vector<uint32_t> &candidates,
-    const std::array<AnchorConfig, 9> &anchor_configs, const uint32_t D,
-    const uint32_t H, const uint32_t W, const int64_t b_offset) {
-  uint32_t stride_y = W;
-  uint32_t stride_z = W * H;
-
-  uint32_t chunk_skip = 0;
-  uint32_t offset_chunk_skip = 0;
-
-  for (uint32_t d : std::views::iota(1u, D - 1)) {
-    uint32_t d_offset = d * stride_z;
-
-    for (uint32_t h : std::views::iota(1u, H - 1)) {
-      // Create a range to iterate over.
-      uint32_t row_start = d_offset + (h * stride_y) + 1;
-      uint32_t row_end = row_start + (W - 2);
-      uint32_t row_chunks = (row_end - row_start) / 4;
-
-      for (uint32_t i : std::views::iota(0u, row_chunks)) {
-        uint32_t chunk_idx = row_start + i * 4;
-        Byte4 chunk;
-        Byte4 offset_chunk;
-        std::memcpy(&chunk, &img[chunk_idx], sizeof(Byte4));
-        std::memcpy(&offset_chunk, &img[chunk_idx + b_offset], sizeof(Byte4));
-
-        // fast 4 bytes skip
-        if (std::bit_cast<uint32_t>(chunk) == 0)
-          continue;
-        if (std::bit_cast<uint32_t>(offset_chunk) == 0x01010101)
-          continue;
-
-        if (chunk.x == 1 && offset_chunk.x == 0) {
-          uint32_t packed =
-              get_neighborhood(img, chunk_idx + 0, anchor_configs);
-          if (!is_endpoint(packed) && is_euler_invariant(packed) &&
-              is_simple_point(packed))
-            candidates.emplace_back(chunk_idx + 0);
-        }
-        if (chunk.y == 1 && offset_chunk.y == 0) {
-          uint32_t packed =
-              get_neighborhood(img, chunk_idx + 1, anchor_configs);
-          if (!is_endpoint(packed) && is_euler_invariant(packed) &&
-              is_simple_point(packed))
-            candidates.emplace_back(chunk_idx + 1);
-        }
-        if (chunk.z == 1 && offset_chunk.z == 0) {
-          uint32_t packed =
-              get_neighborhood(img, chunk_idx + 2, anchor_configs);
-          if (!is_endpoint(packed) && is_euler_invariant(packed) &&
-              is_simple_point(packed))
-            candidates.emplace_back(chunk_idx + 2);
-        }
-        if (chunk.overflow_value == 1 && offset_chunk.overflow_value == 0) {
-          uint32_t packed =
-              get_neighborhood(img, chunk_idx + 3, anchor_configs);
-          if (!is_endpoint(packed) && is_euler_invariant(packed) &&
-              is_simple_point(packed))
-            candidates.emplace_back(chunk_idx + 3);
-        }
-      }
-      uint32_t tail_start = row_start + (row_chunks * 4);
-      for (uint32_t i : std::views::iota(tail_start, row_end)) {
-        if (img[i] != 1)
-          continue;
-        if (img[i + b_offset] != 0)
-          continue;
-
-        uint32_t packed = get_neighborhood(img, i, anchor_configs);
-
-        if (is_endpoint(packed))
-          continue;
-        if (!is_euler_invariant(packed))
-          continue;
-        if (!is_simple_point(packed))
-          continue;
-
-        candidates.emplace_back(i);
-      }
-    }
-  }
-  std::sort(candidates.begin(), candidates.end());
-}
-
-int skel::sequential_recheck(
-    std::span<uint8_t> img, std::vector<uint32_t> &candidates,
-    const std::array<AnchorConfig, 9> &anchor_configs) {
-  bool no_change = true;
-  for (uint32_t i : candidates) {
-    uint32_t packed = get_neighborhood(img, i, anchor_configs);
-
-    if (is_simple_point(packed)) {
-      img[i] = 0;
-      no_change = false;
-    }
-  }
-  return no_change ? 1 : 0;
-}
+#include <execution>
 
 void skel::compute_thin_image(std::span<uint8_t> img, const uint32_t D,
                               const uint32_t H, const uint32_t W) {
@@ -222,25 +36,124 @@ void skel::compute_thin_image(std::span<uint8_t> img, const uint32_t D,
   candidates.reserve(stride_z);
   int unchanged_borders = 0;
   constexpr uint8_t Byte4PerUnit = 4;
-  constexpr uint32_t bytes_per_unit = Byte4PerUnit * 4;
+  constexpr uint32_t bytes_per_unit = Byte4PerUnit * 32;//32;
 
+  //std::vector<uint32_t> seq_candidates;
   while (unchanged_borders < num_borders) {
     unchanged_borders = 0;
 
+    //TRACE_EVENT("simple_point", "While_true_loop");
     for (auto border : std::span(borders).first(num_borders)) {
+        //TRACE_EVENT("simple_point", "Border_Loop");
       int64_t b_offset = border_offsets[border];
       candidates.clear();
+      //seq_candidates.clear();
+
       // Pass 1
-      find_simple_point_candidates_Byte4(img, candidates, anchor_configs, D, H,
-                                         W, b_offset);
+      //find_simple_point_candidates_Byte4(img, candidates, anchor_configs, D, H,
+      //                                   W, b_offset);
+      //find_simple_point_candidates_Byte4(img, seq_candidates, anchor_configs, D, H, W, b_offset);
+      //TRACE_EVENT_BEGIN("simple_point", "Find_Simple_Point_Para");
       //find_simple_point_candidates_Iteratite_preParallel_Byte4<Byte4PerUnit, bytes_per_unit>(img, candidates, anchor_configs, D, H,
       //    W, b_offset);
+      find_simple_point_candidates_Parallel_Byte4<Byte4PerUnit, bytes_per_unit>(img, candidates, anchor_configs, D, H,
+          W, b_offset);
+      //TRACE_EVENT_END("simple_point");
       // find_simple_point_candidates_Byte4_prepara(img, candidates, anchor_configs, D, H,
       //                                           W, b_offset);
       // find_simple_point_candidates_Iterative_Byte4(img, candidates, anchor_configs, D, H,
       //                                           W, b_offset);
       // Pass 2
-      unchanged_borders += sequential_recheck(img, candidates, anchor_configs);
+      std::sort(std::execution::par_unseq, candidates.begin(), candidates.end());
+      //std::sort(candidates.begin(), candidates.end());
+      //TRACE_EVENT_END("simple_point");
+      /*
+      std::sort(seq_candidates.begin(), seq_candidates.end());
+      if (candidates.size() != seq_candidates.size()) {
+          std::cerr << "FATAL: Candidate count mismatch! Seq: " << candidates.size()
+                    << " vs Par: " << seq_candidates.size() << "\n";
+      }
+
+      // Find the EXACT first mismatch
+      size_t min_size = std::min(candidates.size(), seq_candidates.size());
+      for (size_t i = 0; i < min_size; ++i) {
+          if (candidates[i] != seq_candidates[i]) {
+              // Helper to convert flat index back to 3D coordinates
+              // Helper to convert flat index back to 3D coordinates
+              auto to_3d = [H, W](uint32_t idx) {
+                  uint32_t d = idx / (H * W);
+                  uint32_t rem = idx % (H * W);
+                  uint32_t h = rem / W;
+                  uint32_t w = rem % W;
+                  return std::make_tuple(d, h, w);
+              };
+
+              // Helper to find which Work Unit contains a specific flat index
+              auto find_owning_unit = [D, H, W, bytes_per_unit](uint32_t target_idx) -> std::tuple<uint32_t, uint32_t, uint32_t, uint32_t> {
+                  uint32_t stride_y = W;
+                  uint32_t stride_z = W * H;
+                  uint32_t bytes_per_row = W - 2;
+                  uint32_t units_per_row = (bytes_per_row + bytes_per_unit - 1) / bytes_per_unit;
+
+                  // Extract 3D coords
+                  uint32_t d = target_idx / stride_z;
+                  uint32_t rem_z = target_idx % stride_z;
+                  uint32_t h = rem_z / stride_y;
+                  uint32_t w = rem_z % stride_y;
+
+                  // Check if it's in the valid padded region (1 to size-2)
+                  if (d < 1 || d >= D - 1 || h < 1 || h >= H - 1 || w < 1 || w >= W - 1) {
+                      return {UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX}; // Invalid/Padding
+                  }
+
+                  // Map back to "logical" row/col inside the valid region
+                  uint32_t logical_h = h - 1;
+                  uint32_t logical_w = w - 1;
+
+                  uint32_t unit_in_row = logical_w / bytes_per_unit;
+                  uint32_t row_index_in_slice = logical_h; // Each H is a row in our unit mapping
+
+                  // The global row_index combines D and H
+                  uint32_t global_row_index = (d - 1) * (H - 2) + logical_h;
+
+                  uint32_t unit_index = global_row_index * units_per_row + unit_in_row;
+
+                  return {unit_index, d, h, w};
+              };
+
+              auto [sd, sh, sw] = to_3d(candidates[i]);
+              auto [pd, ph, pw] = to_3d(seq_candidates[i]);
+
+              // Identify the blocks
+              auto [seq_unit, seq_d, seq_h, seq_w] = find_owning_unit(candidates[i]);
+              auto [par_unit, par_d, par_h, par_w] = find_owning_unit(seq_candidates[i]);
+
+              std::cerr << "FIRST LOGICAL MISMATCH at vector index " << i << "!\n";
+
+              std::cerr << "--- SEQUENTIAL FOUND ---\n";
+              std::cerr << "  Flat Index: " << candidates[i] << "\n";
+              std::cerr << "  Coords (d,h,w): (" << sd << ", " << sh << ", " << sw << ")\n";
+              std::cerr << "  Owning Unit Index: " << seq_unit << "\n";
+              if (seq_unit != UINT32_MAX) {
+                  std::cerr << "  Unit Location: Slice " << seq_d << ", Row " << seq_h << ", Col-Chunk " << (seq_w - 1) / bytes_per_unit << "\n";
+              }
+
+              std::cerr << "--- PARALLEL FOUND ---\n";
+              std::cerr << "  Flat Index: " << seq_candidates[i] << "\n";
+              std::cerr << "  Coords (d,h,w): (" << pd << ", " << ph << ", " << pw << ")\n";
+              std::cerr << "  Owning Unit Index: " << par_unit << "\n";
+              if (par_unit != UINT32_MAX) {
+                  std::cerr << "  Unit Location: Slice " << par_d << ", Row " << par_h << ", Col-Chunk " << (par_w - 1) / bytes_per_unit << "\n";
+              }
+
+              std::cerr << "----------------------\n";
+              break;
+          }
+      }
+      */
+      //TRACE_EVENT_BEGIN("simple_point", "Sequential_Recheck");
+      unchanged_borders += sequential_recheck(img, candidates, anchor_configs, stride_y, stride_z);
+      //TRACE_EVENT_END("simple_point");
     }
   }
 }
