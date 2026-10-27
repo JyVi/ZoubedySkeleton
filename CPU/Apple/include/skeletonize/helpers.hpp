@@ -110,7 +110,12 @@ constexpr std::array<uint32_t, 27> generate_adjacency_masks() {
 
 constexpr auto ADJACENCY_MASKS = generate_adjacency_masks();
 
-static inline uint32_t pack3(const uint8_t *p, unsigned base);
+static inline uint32_t pack3(const uint8_t *p, unsigned base) {
+  const uint32_t bits =
+      uint32_t(p[0]) | (uint32_t(p[1]) << 1) | (uint32_t(p[2]) << 2);
+
+  return bits << base;
+}
 
 // Returns true if the voxel is an endpoint (exactly 1 neighbor + the center
 // voxel)
@@ -128,7 +133,25 @@ get_neighborhood(const std::span<const uint8_t> volume_array, int voxPosition,
 
 inline uint32_t get_neighborhood_fast(std::span<const uint8_t> volume,
                                       uint32_t pos, uint32_t stride_y,
-                                      uint32_t stride_z);
+                                      uint32_t stride_z) {
+  const uint8_t *p = volume.data() + pos;
+
+  uint32_t n = 0;
+
+  n |= pack3(p - stride_z - stride_y - 1, 0);
+  n |= pack3(p - stride_z - 1, 3);
+  n |= pack3(p - stride_z + stride_y - 1, 6);
+
+  n |= pack3(p - stride_y - 1, 9);
+  n |= pack3(p - 1, 12);
+  n |= pack3(p + stride_y - 1, 15);
+
+  n |= pack3(p + stride_z - stride_y - 1, 18);
+  n |= pack3(p + stride_z - 1, 21);
+  n |= pack3(p + stride_z + stride_y - 1, 24);
+
+  return n;
+}
 
 int sequential_recheck(std::span<uint8_t> img,
                        std::vector<uint32_t> &candidates,

@@ -50,10 +50,16 @@ add_library(skeletonize_core STATIC
     include/skeletonize/lut.hpp
     include/skeletonize/helpers.cc
     include/skeletonize/helpers.hpp
+    include/skeletonize/helpers_bit.cc
+    include/skeletonize/helpers_bit.hpp
     include/skeletonize/pipeline_multi_thread.cc
     include/skeletonize/pipeline_multi_thread.hpp
     include/skeletonize/pipeline_single_thread.cc
     include/skeletonize/pipeline_single_thread.hpp
+    include/skeletonize/pipeline_single_thread_bit.cc
+    include/skeletonize/pipeline_single_thread_bit.hpp
+    include/skeletonize/pipeline_multi_thread_bit.cc
+    include/skeletonize/pipeline_multi_thread_bit.hpp
 )
 
 target_include_directories(skeletonize_core PUBLIC
