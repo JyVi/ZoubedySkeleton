@@ -188,8 +188,8 @@ load_neighborhood_words62(std::span<const uint64_t> img, size_t first_voxel,
   return words;
 }
 
-int sequential_recheck(std::span<uint64_t> img,
-                       std::vector<uint32_t> &candidates,
+int sequential_recheck_bit(std::span<uint64_t> img,
+                       std::vector<uint64_t> &candidates,
                        const std::array<AnchorConfig, 9> &anchor_configs,
                        uint32_t stride_y, uint32_t stride_z);
 

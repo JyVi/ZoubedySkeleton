@@ -10,7 +10,7 @@
 #include <vector>
 
 void skel::find_simple_point_candidates_packed(
-    std::span<const uint64_t> img, std::vector<uint32_t> &candidates,
+    std::span<const uint64_t> img, std::vector<uint64_t> &candidates,
     const std::array<AnchorConfig, 9> &anchors, uint32_t D, uint32_t H,
     uint32_t W, int64_t b_offset) {
   const size_t stride_y = W;
@@ -103,7 +103,7 @@ void skel::compute_thin_image_single_threaded_bit(std::span<uint64_t> img,
 
   const int num_borders = (D == 3) ? 4 : 6;
 
-  std::vector<uint32_t> candidates;
+  std::vector<uint64_t> candidates;
   candidates.reserve(stride_z);
 
   int unchanged_borders = 0;
@@ -120,7 +120,7 @@ void skel::compute_thin_image_single_threaded_bit(std::span<uint64_t> img,
       find_simple_point_candidates_packed(read_img, candidates, anchor_configs,
                                           D, H, W, b_offset);
 
-      unchanged_borders += sequential_recheck(img, candidates, anchor_configs,
+      unchanged_borders += sequential_recheck_bit(img, candidates, anchor_configs,
                                               stride_y, stride_z);
     }
   }

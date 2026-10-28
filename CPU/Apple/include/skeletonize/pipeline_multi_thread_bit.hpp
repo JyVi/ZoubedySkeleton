@@ -13,8 +13,8 @@
 namespace skel {
 
 struct BitWorkUnit {
-    size_t start_idx; // Linear voxel index in the packed volume
-    uint32_t length;  // Number of interior voxels to process
+    uint64_t start_idx; // Linear voxel index in the packed volume
+    uint64_t length;  // Number of interior voxels to process
 };
 
 template <uint32_t VoxelsPerUnit>
@@ -55,7 +55,7 @@ inline BitWorkUnit get_bit_work_unit(size_t unit_index, uint32_t D, uint32_t H,
 }
 
 void find_simple_point_candidates_packed_parallel(
-    std::span<const uint64_t> img, std::vector<uint32_t> &candidates,
+    std::span<const uint64_t> img, std::vector<uint64_t> &candidates,
     const std::array<AnchorConfig, 9> &anchor_configs, uint32_t D, uint32_t H,
     uint32_t W, int64_t b_offset);
 
@@ -63,16 +63,16 @@ void find_candidates_bit_work_unit(std::span<const uint64_t> img,
                                    const BitWorkUnit &unit,
                                    const std::array<AnchorConfig, 9> &anchors,
                                    int64_t b_offset,
-                                   std::vector<uint32_t> &local_candidates);
+                                   std::vector<uint64_t> &local_candidates);
 
 void find_candidates_bit_work_unit_mutex(
     std::span<const uint64_t> img, const BitWorkUnit &unit,
     const std::array<AnchorConfig, 9> &anchors, int64_t b_offset,
-    std::array<uint32_t, 8192> &buffer_candidates,
-    size_t &index_candidates_array);
+    std::array<uint64_t, 8192> &buffer_candidates,
+    uint64_t &index_candidates_array);
 
 void find_simple_point_candidates_packed_parallel_mutex(
-    std::span<const uint64_t> img, std::vector<uint32_t> &candidates,
+    std::span<const uint64_t> img, std::vector<uint64_t> &candidates,
     const std::array<AnchorConfig, 9> &anchor_configs, uint32_t D, uint32_t H,
     uint32_t W, int64_t b_offset);
 

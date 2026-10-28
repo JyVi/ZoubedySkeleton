@@ -6,7 +6,6 @@ void skel::get_neighborhoods62_bit_plane(const std::array<uint64_t, 9> &w,
 
   std::array<uint32_t, 32> lo{};
   std::array<uint32_t, 32> hi{};
-  //uint32_t hi[32]{};
 
   for (unsigned r = 0; r < 9; ++r) {
     for (unsigned d = 0; d < 3; ++d) {
@@ -39,8 +38,8 @@ void skel::get_neighborhoods62_bit(const std::array<uint64_t, 9> &w,
 }
 
 
-int skel::sequential_recheck(std::span<uint64_t> img,
-                             std::vector<uint32_t> &candidates,
+int skel::sequential_recheck_bit(std::span<uint64_t> img,
+                             std::vector<uint64_t> &candidates,
                              const std::array<AnchorConfig, 9> &anchor_configs,
                              uint32_t stride_y, uint32_t stride_z) {
   bool no_change = true;
