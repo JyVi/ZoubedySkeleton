@@ -37,10 +37,10 @@ static inline void unpack_64_fast(uint64_t word, uint8_t *dst) noexcept {
   }
 }
 
-#include <arm_neon.h>
 #include <cstdint>
 
 #if defined(__aarch64__)
+#include <arm_neon.h>
 
 static inline uint16_t pack_16_neon(const uint8_t *src) {
   const uint8x16_t v = vld1q_u8(src);
