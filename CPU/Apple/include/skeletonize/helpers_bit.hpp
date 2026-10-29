@@ -4,9 +4,11 @@
 #include <bit>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 #include "helpers.hpp"
-#include "skeletonize/perfetto_tracing.hpp"
+#include "skeletonize/helpers_bit.hpp"
+#include "skeletonize/lut.hpp"
 
 namespace skel {
 

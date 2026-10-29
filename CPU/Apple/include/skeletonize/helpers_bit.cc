@@ -1,5 +1,4 @@
 #include "helpers_bit.hpp"
-#include "perfetto_tracing.hpp"
 
 void skel::get_neighborhoods62_bit_plane(const std::array<uint64_t, 9> &w,
                                          std::array<uint32_t, 62> &out) {

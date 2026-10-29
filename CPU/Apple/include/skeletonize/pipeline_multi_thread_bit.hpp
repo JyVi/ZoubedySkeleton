@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -13,8 +14,8 @@
 namespace skel {
 
 struct BitWorkUnit {
-    uint64_t start_idx; // Linear voxel index in the packed volume
-    uint64_t length;  // Number of interior voxels to process
+  uint64_t start_idx; // Linear voxel index in the packed volume
+  uint64_t length;    // Number of interior voxels to process
 };
 
 template <uint32_t VoxelsPerUnit>
@@ -70,6 +71,11 @@ void find_candidates_bit_work_unit_mutex(
     const std::array<AnchorConfig, 9> &anchors, int64_t b_offset,
     std::array<uint64_t, 8192> &buffer_candidates,
     uint64_t &index_candidates_array);
+
+void mutex_write(WriteBuffer &local_write_buffer,
+                 std::span<uint64_t> span_array,
+                 uint64_t &index_candidates_array, std::mutex &candidates_mutex,
+                 std::vector<uint64_t> &candidates);
 
 void find_simple_point_candidates_packed_parallel_mutex(
     std::span<const uint64_t> img, std::vector<uint64_t> &candidates,

@@ -1,6 +1,5 @@
 #include "pipeline_multi_thread_bit.hpp"
-#include <algorithm>
-#include <cstdint>
+
 
 void skel::find_candidates_bit_work_unit(
     std::span<const uint64_t> img, const BitWorkUnit &unit,
@@ -29,8 +28,8 @@ void skel::find_candidates_bit_work_unit(
     }
 
     // It is fine because only 1 bit of the 64 one is used for +- so max
-    // positive int64 is max 64 bits Stage 2: Keep voxels whose selected border
-    // neighbor is background.
+    // positive int64 is max 64 bits
+    // Stage 2: Keep voxels whose selected border neighbor is background.
     const uint64_t offset_first = static_cast<int64_t>(first) + b_offset;
 
     const uint64_t offset_bits = load_bits_at_voxel(img, offset_first);
@@ -149,8 +148,7 @@ void skel::find_candidates_bit_work_unit_mutex(
         const uint32_t n = get_neighborhood(img, first + bit, anchors);
 
         if (!is_endpoint(n) && is_euler_invariant(n) && is_simple_point(n)) {
-          buffer_candidates[index_candidates_array++] =
-              first + bit;
+          buffer_candidates[index_candidates_array++] = first + bit;
         }
       }
     } else {
@@ -173,8 +171,7 @@ void skel::find_candidates_bit_work_unit_mutex(
         const uint32_t n = neighborhoods[bit];
 
         if (!is_endpoint(n) && is_euler_invariant(n) && is_simple_point(n)) {
-          buffer_candidates[index_candidates_array++] =
-              first + bit;
+          buffer_candidates[index_candidates_array++] = first + bit;
         }
       }
     }
@@ -227,13 +224,38 @@ void skel::find_simple_point_candidates_packed_parallel(
   }
 }
 
+void skel::mutex_write(WriteBuffer &local_write_buffer,
+                       std::span<uint64_t> span_array,
+                       uint64_t &index_candidates_array,
+                       std::mutex &candidates_mutex,
+                       std::vector<uint64_t> &candidates) {
+  if (local_write_buffer.size + index_candidates_array >=
+      WRITE_BUFFER_CAPACITY) {
+    {
+      std::lock_guard<std::mutex> lock(candidates_mutex);
+
+      candidates.insert(candidates.end(), local_write_buffer.data.begin(),
+                        local_write_buffer.data.begin() +
+                            local_write_buffer.size);
+
+      candidates.insert(candidates.end(), span_array.begin(), span_array.end());
+    }
+
+    local_write_buffer.size = 0;
+  } else {
+    std::copy(span_array.begin(), span_array.end(),
+              local_write_buffer.data.begin() + local_write_buffer.size);
+
+    local_write_buffer.size += index_candidates_array;
+  }
+}
+
 void skel::find_simple_point_candidates_packed_parallel_mutex(
     std::span<const uint64_t> img, std::vector<uint64_t> &candidates,
     const std::array<AnchorConfig, 9> &anchor_configs, uint32_t D, uint32_t H,
     uint32_t W, int64_t b_offset) {
   constexpr uint32_t VoxelsPerUnit = 8192;
   constexpr size_t LocalCandidateCapacity = VoxelsPerUnit;
-
   const size_t total_units = get_total_bit_work_units<VoxelsPerUnit>(D, H, W);
 
   candidates.clear();
@@ -248,13 +270,9 @@ void skel::find_simple_point_candidates_packed_parallel_mutex(
       pool.submit_loop(size_t{0}, total_units, [&](size_t unit_id) {
         // Each worker owns its own write buffer.
         const size_t worker_id = BS::this_thread::get_index().value();
-
         WriteBuffer &local_write_buffer = writebuffer[worker_id];
-
         std::array<uint64_t, LocalCandidateCapacity> buffer_candidates;
-
         uint64_t index_candidates_array = 0;
-
         const BitWorkUnit unit =
             get_bit_work_unit<VoxelsPerUnit>(unit_id, D, H, W);
 
@@ -269,40 +287,21 @@ void skel::find_simple_point_candidates_packed_parallel_mutex(
         std::span<uint64_t> span_array(buffer_candidates.data(),
                                        index_candidates_array);
 
-        if (local_write_buffer.size + index_candidates_array >=
-            WRITE_BUFFER_CAPACITY) {
-          {
-            std::lock_guard<std::mutex> lock(candidates_mutex);
-
-            candidates.insert(candidates.end(), local_write_buffer.data.begin(),
-                              local_write_buffer.data.begin() +
-                                  local_write_buffer.size);
-
-            candidates.insert(candidates.end(), span_array.begin(),
-                              span_array.end());
-          }
-
-          local_write_buffer.size = 0;
-        } else {
-          std::copy(span_array.begin(), span_array.end(),
-                    local_write_buffer.data.begin() + local_write_buffer.size);
-
-          local_write_buffer.size += index_candidates_array;
-        }
+        mutex_write(local_write_buffer, span_array, index_candidates_array,
+                    candidates_mutex, candidates);
       });
 
   loop_future.wait();
 
+  auto active_buffers = writebuffer | std::views::filter([](const auto &buf) {
+                          return buf.size > 0;
+                        });
   // Flush each worker's residual buffer after all tasks finish.
-  for (auto &local_write_buffer : writebuffer) {
-    if (local_write_buffer.size == 0)
-      continue;
-
-    candidates.insert(candidates.end(), local_write_buffer.data.begin(),
-                      local_write_buffer.data.begin() +
-                          local_write_buffer.size);
-    local_write_buffer.size = 0;
-  }
+  std::ranges::for_each(active_buffers, [&](auto &buf) {
+    candidates.insert(candidates.end(), buf.data.begin(),
+                      buf.data.begin() + buf.size);
+    buf.size = 0;
+  });
 }
 
 void skel::compute_thin_image_multi_threaded_bit(std::span<uint64_t> img,
@@ -349,8 +348,8 @@ void skel::compute_thin_image_multi_threaded_bit(std::span<uint64_t> img,
 
       std::sort(std::execution::par_unseq, candidates.begin(),
                 candidates.end());
-      unchanged_borders += sequential_recheck_bit(img, candidates, anchor_configs,
-                                              stride_y, stride_z);
+      unchanged_borders += sequential_recheck_bit(
+          img, candidates, anchor_configs, stride_y, stride_z);
     }
   }
 }

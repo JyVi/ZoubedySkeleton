@@ -1,13 +1,5 @@
 #include "pipeline_single_thread_bit.hpp"
-#include "perfetto_tracing.hpp"
-#include "skeletonize/helpers_bit.hpp"
-#include "skeletonize/lut.hpp"
 
-#include <bit>
-#include <cstdint>
-#include <execution>
-#include <span>
-#include <vector>
 
 void skel::find_simple_point_candidates_packed(
     std::span<const uint64_t> img, std::vector<uint64_t> &candidates,
