@@ -258,11 +258,10 @@ static void pack_bytes_to_bits_parallel_newscheduler(const uint8_t *src,
   constexpr size_t MinWordsPerTask = size_t{1} << 18;
 
   const auto pack_range = [src, dst](size_t begin, size_t end) noexcept {
-    /*
     size_t word = begin;
 
     // Unroll by four.
-    const size_t unrolled_end = begin + ((end - begin) & ~size_t{3});
+    const size_t unrolled_end = begin + ((end - begin) & ~size_t{7});
 
     for (; word < unrolled_end; word += 4) {
       const uint8_t *p = src + word * 64;
@@ -275,7 +274,7 @@ static void pack_bytes_to_bits_parallel_newscheduler(const uint8_t *src,
     for (; word < end; ++word) {
       dst[word] = pack_64_fast(src + word * 64);
     }
-    */
+    /*
     size_t word = begin;
     const size_t unrolled_end = begin + ((end - begin) & ~size_t{7});
 
@@ -293,6 +292,7 @@ static void pack_bytes_to_bits_parallel_newscheduler(const uint8_t *src,
     for (; word < end; ++word) {
       pack_64_fast(src + word * 64);
     }
+    */
   };
 
   const size_t threads = std::max<size_t>(1, skel::pool.get_thread_count());

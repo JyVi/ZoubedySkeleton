@@ -70,3 +70,65 @@ bool skel::is_simple_point(const uint32_t packed_neighborhood) {
   }
   return shell == 0;
 }
+
+bool skel::is_simple_point_whole_frontier(uint32_t packed_neighborhood) {
+    uint32_t remaining = packed_neighborhood & ~(1u << 13);
+
+    if (remaining == 0)
+        return true;
+
+    uint32_t frontier = remaining & -remaining;
+    remaining &= ~frontier;
+
+    while (frontier != 0) {
+        uint32_t next = 0;
+
+        uint32_t current = frontier;
+
+        while (current != 0) {
+            const unsigned bit = std::countr_zero(current);
+            current &= current - 1;
+
+            next |= ADJACENCY_MASKS[bit];
+        }
+
+        next &= remaining;
+
+        if (next == 0)
+            return remaining == 0;
+
+        remaining &= ~next;
+        frontier = next;
+    }
+
+    return remaining == 0;
+}
+
+bool skel::is_simple_point_whole_frontier_precomp(uint32_t packed_neighborhood)
+{
+    uint32_t remaining = packed_neighborhood & ~(1u << 13);
+
+    if (remaining == 0)
+        return true;
+
+    uint32_t frontier = remaining & -remaining;
+    remaining ^= frontier;
+
+    while (remaining != 0) {
+        const uint32_t adjacent =
+            ADJ_LUT_0[frontier & 0x7Fu] |
+            ADJ_LUT_1[(frontier >> 7) & 0x3Fu] |
+            ADJ_LUT_2[(frontier >> 14) & 0x3Fu] |
+            ADJ_LUT_3[(frontier >> 20) & 0x7Fu];
+
+        const uint32_t next = adjacent & remaining;
+
+        if (next == 0)
+            return false;
+
+        remaining ^= next;
+        frontier = next;
+    }
+
+    return true;
+}

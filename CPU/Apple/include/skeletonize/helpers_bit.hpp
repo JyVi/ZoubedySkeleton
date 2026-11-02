@@ -12,7 +12,7 @@
 
 namespace skel {
 
-static inline void transpose32(std::array<uint32_t, 32>& a) {
+static inline void transpose32(std::array<uint32_t, 32> &a) {
 #pragma GCC unroll 32
   for (unsigned j = 16, m = 0x0000ffffu; j; j >>= 1) {
     for (unsigned k = 0; k < 32; k = (k + j + 1) & ~j) {
@@ -30,6 +30,9 @@ void get_neighborhoods62_bit_plane(const std::array<uint64_t, 9> &w,
 
 void get_neighborhoods62_bit(const std::array<uint64_t, 9> &w,
                              std::array<uint32_t, 62> &out);
+
+void get_neighborhoods62_shift(const std::array<uint64_t, 9> &w,
+                               std::array<uint32_t, 62> &out);
 
 inline uint32_t extract_triplet(std::span<const uint64_t> packed,
                                 size_t voxel_index) {
@@ -191,8 +194,8 @@ load_neighborhood_words62(std::span<const uint64_t> img, size_t first_voxel,
 }
 
 int sequential_recheck_bit(std::span<uint64_t> img,
-                       std::vector<uint64_t> &candidates,
-                       const std::array<AnchorConfig, 9> &anchor_configs,
-                       uint32_t stride_y, uint32_t stride_z);
+                           std::vector<uint64_t> &candidates,
+                           const std::array<AnchorConfig, 9> &anchor_configs,
+                           uint32_t stride_y, uint32_t stride_z);
 
 } // namespace skel

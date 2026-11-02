@@ -110,6 +110,29 @@ constexpr std::array<uint32_t, 27> generate_adjacency_masks() {
 
 constexpr auto ADJACENCY_MASKS = generate_adjacency_masks();
 
+template <unsigned Base, unsigned Bits>
+consteval auto make_adjacency_union_lut() {
+    std::array<uint32_t, 1u << Bits> lut{};
+
+    for (uint32_t mask = 1; mask < (1u << Bits); ++mask) {
+        const unsigned bit = std::countr_zero(mask);
+
+        lut[mask] =
+            lut[mask & (mask - 1)] |
+            ADJACENCY_MASKS[Base + bit];
+    }
+
+    return lut;
+}
+
+inline constexpr auto ADJ_LUT_0 = make_adjacency_union_lut<0, 7>();
+inline constexpr auto ADJ_LUT_1 = make_adjacency_union_lut<7, 6>();
+inline constexpr auto ADJ_LUT_2 = make_adjacency_union_lut<14, 6>();
+inline constexpr auto ADJ_LUT_3 = make_adjacency_union_lut<20, 7>();
+
+bool is_simple_point_whole_frontier_precomp(uint32_t packed_neighborhood);
+
+
 static inline uint32_t pack3(const uint8_t *p, unsigned base) {
   const uint32_t bits =
       uint32_t(p[0]) | (uint32_t(p[1]) << 1) | (uint32_t(p[2]) << 2);
@@ -125,6 +148,8 @@ bool is_endpoint(const uint32_t packed_neighborhood);
  BFS rewrite of the Octant method from the Lee94 paper with the bitpacking
  trick. */
 bool is_simple_point(const uint32_t packed_neighborhood);
+
+bool is_simple_point_whole_frontier(uint32_t packed_neighborhood);
 
 // Get the neighborhood of a 3d volume voxel
 uint32_t

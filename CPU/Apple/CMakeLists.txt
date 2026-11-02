@@ -140,7 +140,7 @@ if(BUILD_PYTHON_BINDINGS)
 endif()
 
 if(BUILD_SKELETONIZE_APP)
-    add_executable(skeletonize_app src/main.cc)
+    add_executable(skeletonize_app tests/Cpp/main.cpp)
 
     target_link_libraries(skeletonize_app PRIVATE
         skeletonize_core

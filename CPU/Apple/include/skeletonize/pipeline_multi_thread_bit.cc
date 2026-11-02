@@ -1,4 +1,7 @@
 #include "pipeline_multi_thread_bit.hpp"
+#include "skeletonize/helpers.hpp"
+#include "skeletonize/helpers_bit.hpp"
+#include "skeletonize/lut.hpp"
 
 
 void skel::find_candidates_bit_work_unit(
@@ -92,13 +95,116 @@ void skel::find_candidates_bit_work_unit(
   }
 }
 
+//inline uint64_t load64_at_bit_unchecked(
+uint64_t load64_at_bit_unchecked(
+    std::span<const uint64_t> img,
+    size_t bit_index)
+{
+    const size_t wi = bit_index >> 6;
+    const unsigned shift = bit_index & 63;
+
+    const uint64_t lo = img[wi];
+
+    if (shift == 0)
+        return lo;
+
+    return (lo >> shift) | (img[wi + 1] << (64 - shift));
+}
+
+//inline std::array<uint64_t, 9>
+std::array<uint64_t, 9>
+load_neighborhood_words62_new(
+    std::span<const uint64_t> img, size_t first,
+                              const std::array<skel::AnchorConfig, 9> &anchors)
+{
+    return {{
+        load64_at_bit_unchecked(img, first + anchors[0].mem_offset),
+        load64_at_bit_unchecked(img, first + anchors[1].mem_offset),
+        load64_at_bit_unchecked(img, first + anchors[2].mem_offset),
+        load64_at_bit_unchecked(img, first + anchors[3].mem_offset),
+        load64_at_bit_unchecked(img, first + anchors[4].mem_offset),
+        load64_at_bit_unchecked(img, first + anchors[5].mem_offset),
+        load64_at_bit_unchecked(img, first + anchors[6].mem_offset),
+        load64_at_bit_unchecked(img, first + anchors[7].mem_offset),
+        load64_at_bit_unchecked(img, first + anchors[8].mem_offset)
+    }};
+}
+
+template <unsigned I>
+//inline uint32_t extract_neighborhood(
+uint32_t extract_neighborhood(
+    const std::array<uint64_t, 9>& w)
+{
+    uint32_t n = 0;
+
+    n |= uint32_t((w[0] >> I) & 7u);
+    n |= uint32_t((w[1] >> I) & 7u) << 3;
+    n |= uint32_t((w[2] >> I) & 7u) << 6;
+    n |= uint32_t((w[3] >> I) & 7u) << 9;
+    n |= uint32_t((w[4] >> I) & 7u) << 12;
+    n |= uint32_t((w[5] >> I) & 7u) << 15;
+    n |= uint32_t((w[6] >> I) & 7u) << 18;
+    n |= uint32_t((w[7] >> I) & 7u) << 21;
+    n |= uint32_t((w[8] >> I) & 7u) << 24;
+
+    return n;
+}
+
+template <size_t... I>
+//inline void get_neighborhoods62_unrolled_impl(
+void get_neighborhoods62_unrolled_impl(
+    const std::array<uint64_t, 9>& w,
+    std::array<uint32_t, 62>& out,
+    std::index_sequence<I...>)
+{
+    ((out[I] = extract_neighborhood<I>(w)), ...);
+}
+
+//inline void get_neighborhoods62_unrolled(
+void get_neighborhoods62_unrolled(
+    const std::array<uint64_t, 9>& w,
+    std::array<uint32_t, 62>& out)
+{
+    get_neighborhoods62_unrolled_impl(
+        w, out, std::make_index_sequence<62>{});
+}
+
+//inline uint32_t get_neighborhood62_at(
+uint32_t get_neighborhood62_at(
+    const std::array<uint64_t, 9>& words,
+    unsigned bit) noexcept {
+
+    uint32_t n = 0;
+
+    n |= uint32_t((words[0] >> bit) & 7u);
+    n |= uint32_t((words[1] >> bit) & 7u) << 3;
+    n |= uint32_t((words[2] >> bit) & 7u) << 6;
+
+    n |= uint32_t((words[3] >> bit) & 7u) << 9;
+    n |= uint32_t((words[4] >> bit) & 7u) << 12;
+    n |= uint32_t((words[5] >> bit) & 7u) << 15;
+
+    n |= uint32_t((words[6] >> bit) & 7u) << 18;
+    n |= uint32_t((words[7] >> bit) & 7u) << 21;
+    n |= uint32_t((words[8] >> bit) & 7u) << 24;
+
+    return n;
+}
+
+#if defined(__clang__)
+__attribute__((noinline))
+#endif
+bool profile_euler_invariant(uint32_t n) noexcept {
+    return skel::is_euler_invariant_D(n);
+}
+
 void skel::find_candidates_bit_work_unit_mutex(
     std::span<const uint64_t> img, const BitWorkUnit &unit,
     const std::array<AnchorConfig, 9> &anchors, int64_t b_offset,
     std::array<uint64_t, 8192> &buffer_candidates,
     uint64_t &index_candidates_array) {
   constexpr uint64_t BatchSize = 62;
-  constexpr uint64_t SparseThreshold = 16;
+  constexpr uint64_t SparseThreshold = 8;
 
   std::array<uint32_t, BatchSize> neighborhoods;
 
@@ -140,22 +246,28 @@ void skel::find_candidates_bit_work_unit_mutex(
     if (count == BatchSize && candidates_in_batch <= SparseThreshold) {
       // Sparse path: extract only eligible voxels.
       uint64_t pending = mask;
+      const auto words =
+              load_neighborhood_words62_new(img, first, anchors);
 
       while (pending != 0) {
         const unsigned bit = std::countr_zero(pending);
         pending &= pending - 1;
 
-        const uint32_t n = get_neighborhood(img, first + bit, anchors);
+        //const uint32_t n = get_neighborhood(img, first + bit, anchors);
+        const uint32_t n = get_neighborhood62_at(words, bit);
 
-        if (!is_endpoint(n) && is_euler_invariant(n) && is_simple_point(n)) {
+        if (!is_endpoint(n) && profile_euler_invariant(n) && is_simple_point_whole_frontier_precomp(n)) {
           buffer_candidates[index_candidates_array++] = first + bit;
         }
       }
     } else {
       // Dense path: construct neighborhoods for the batch.
       if (count == BatchSize) {
-        const auto words = load_neighborhood_words62(img, first, anchors);
-        get_neighborhoods62_bit_plane(words, neighborhoods);
+        //const auto words = load_neighborhood_words62(img, first, anchors);
+        const auto words = load_neighborhood_words62_new(img, first, anchors);
+        //get_neighborhoods62_bit_plane(words, neighborhoods);
+        //get_neighborhoods62_shift(words, neighborhoods);
+        get_neighborhoods62_unrolled(words, neighborhoods);
       } else {
         get_neighborhoods_bit_plane_intermediary(
             img, first, count, anchors,
@@ -170,7 +282,7 @@ void skel::find_candidates_bit_work_unit_mutex(
 
         const uint32_t n = neighborhoods[bit];
 
-        if (!is_endpoint(n) && is_euler_invariant(n) && is_simple_point(n)) {
+        if (!is_endpoint(n) && profile_euler_invariant(n) && is_simple_point_whole_frontier_precomp(n)) {
           buffer_candidates[index_candidates_array++] = first + bit;
         }
       }

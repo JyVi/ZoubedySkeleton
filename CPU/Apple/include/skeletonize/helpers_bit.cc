@@ -1,4 +1,5 @@
 #include "helpers_bit.hpp"
+#include "skeletonize/helpers.hpp"
 
 void skel::get_neighborhoods62_bit_plane(const std::array<uint64_t, 9> &w,
                                          std::array<uint32_t, 62> &out) {
@@ -29,11 +30,30 @@ void skel::get_neighborhoods62_bit(const std::array<uint64_t, 9> &w,
   for (unsigned i = 0; i < 62; ++i) {
     uint32_t n = 0;
 
+    #pragma gcc unroll 9
     for (unsigned r = 0; r < 9; ++r)
       n |= uint32_t((w[r] >> i) & 7u) << (3 * r);
 
     out[i] = n;
   }
+}
+
+void skel::get_neighborhoods62_shift(
+    const std::array<uint64_t, 9>& w,
+    std::array<uint32_t, 62>& out)
+{
+    auto shifted = w;
+
+    for (unsigned i = 0; i < 62; ++i) {
+        uint32_t n = 0;
+
+        for (unsigned r = 0; r < 9; ++r) {
+            n |= uint32_t(shifted[r] & 7u) << (3 * r);
+            shifted[r] >>= 1;
+        }
+
+        out[i] = n;
+    }
 }
 
 
@@ -47,7 +67,7 @@ int skel::sequential_recheck_bit(std::span<uint64_t> img,
   for (uint32_t i : candidates) {
     const uint32_t neighborhood = get_neighborhood(read_img, i, anchor_configs);
 
-    if (is_simple_point(neighborhood)) {
+    if (is_simple_point_whole_frontier_precomp(neighborhood)) {
       img[i >> 6] &= ~(uint64_t{1} << (i & 63));
       no_change = false;
     }

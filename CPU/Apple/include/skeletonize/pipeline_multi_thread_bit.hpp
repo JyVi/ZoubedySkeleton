@@ -85,4 +85,14 @@ void find_simple_point_candidates_packed_parallel_mutex(
 void compute_thin_image_multi_threaded_bit(std::span<uint64_t> img,
                                            const uint32_t D, const uint32_t H,
                                            const uint32_t W);
+
+void find_candidates_bit_work_unit_mutex_perf(
+    std::span<const uint64_t> img,
+    const BitWorkUnit& unit,
+    const std::array<AnchorConfig, 9>& anchors,
+    int64_t b_offset,
+    std::array<uint64_t, 8192>& buffer_candidates,
+    uint64_t& index_candidates_array);
+
+
 } // namespace skel
