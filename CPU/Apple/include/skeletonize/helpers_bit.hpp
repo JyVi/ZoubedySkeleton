@@ -34,6 +34,7 @@ void get_neighborhoods62_bit(const std::array<uint64_t, 9> &w,
 void get_neighborhoods62_shift(const std::array<uint64_t, 9> &w,
                                std::array<uint32_t, 62> &out);
 
+__attribute__((noinline))
 inline uint32_t extract_triplet(std::span<const uint64_t> packed,
                                 size_t voxel_index) {
   const size_t wi = voxel_index >> 6;
@@ -47,6 +48,7 @@ inline uint32_t extract_triplet(std::span<const uint64_t> packed,
   return static_cast<uint32_t>(bits & 7u);
 }
 
+__attribute__((noinline))
 inline uint32_t get_neighborhood(std::span<const uint64_t> packed,
                                  size_t voxel_index,
                                  const std::array<AnchorConfig, 9> &anchors) {
@@ -72,6 +74,7 @@ inline uint32_t get_neighborhood(std::span<const uint64_t> packed,
   return n;
 }
 
+__attribute__((noinline))
 inline void get_neighborhoods_bit_plane_intermediary(
     std::span<const uint64_t> packed, size_t first_voxel, size_t count,
     const std::array<AnchorConfig, 9> &anchors, std::span<uint32_t> out) {
@@ -97,6 +100,7 @@ inline void get_neighborhoods_bit_plane_intermediary(
   }
 }
 
+__attribute__((noinline))
 inline uint64_t load_bits_at_voxel(std::span<const uint64_t> img,
                                    uint64_t voxel_index) {
   const size_t word_index = voxel_index >> 6;
@@ -111,6 +115,7 @@ inline uint64_t load_bits_at_voxel(std::span<const uint64_t> img,
   return bits;
 }
 
+__attribute__((noinline))
 inline uint64_t load_bits_at_voxel(std::span<const uint64_t> img,
                                    uint64_t bit_index, unsigned count) {
   const size_t wi = bit_index >> 6;
@@ -129,6 +134,7 @@ inline bool get_bit(std::span<const uint64_t> img, size_t voxel_index) {
   return (img[voxel_index >> 6] >> (voxel_index & 63)) & 1u;
 }
 
+__attribute__((noinline))
 inline uint64_t load64_at_bit(std::span<const uint64_t> img, size_t bit_index) {
   const size_t wi = bit_index >> 6;
   const unsigned shift = bit_index & 63;
@@ -141,6 +147,7 @@ inline uint64_t load64_at_bit(std::span<const uint64_t> img, size_t bit_index) {
   return value;
 }
 
+__attribute__((noinline))
 inline std::array<uint64_t, 9>
 load_neighborhood_words62_rolled(std::span<const uint64_t> img,
                                  size_t first_voxel,
@@ -157,6 +164,7 @@ load_neighborhood_words62_rolled(std::span<const uint64_t> img,
   return words;
 }
 
+__attribute__((noinline))
 inline std::array<uint64_t, 9>
 load_neighborhood_words62(std::span<const uint64_t> img, size_t first_voxel,
                           const std::array<AnchorConfig, 9> &a) {

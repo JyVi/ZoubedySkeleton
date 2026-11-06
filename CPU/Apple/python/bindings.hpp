@@ -1,6 +1,7 @@
 #pragma once
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <pybind11/cast.h>
 #include <pybind11/numpy.h>
@@ -75,8 +76,6 @@ static inline uint64_t pack_64_neon(const uint8_t *src) {
 #include <cstdint>
 #include <cstring>
 
-#if defined(__aarch64__)
-
 // Requires every input byte to be exactly 0 or 1.
 // Packs src[i] into output bit i.
 // Target: little-endian ARM64, such as Apple M4.
@@ -108,7 +107,6 @@ static inline uint64_t pack_64_fast(const uint8_t *src) noexcept {
          (b6 << 48) | (b7 << 56);
 }
 
-#endif
 
 static void pack_bytes_to_bits_parallel_old_past(const uint8_t *src,
                                                  uint64_t *dst,
@@ -326,15 +324,6 @@ static void pack_bytes_to_bits_parallel_newscheduler(const uint8_t *src,
   }
 }
 
-std::tuple<uint32_t, uint32_t, uint32_t, uint8_t *>
-verification_checkup(py::array_t<uint8_t> volume);
-
-void skeletonize_inplace(py::array_t<uint8_t> volume);
-
-void skeletonize_inplace_bits_past(py::array_t<uint8_t> volume);
-
-void skeletonize_inplace_bits(py::array_t<uint8_t> volume);
-
 #if defined(__AVX2__)
     #include <immintrin.h>
 #elif defined(__x86_64__) || defined(_M_X64)
@@ -416,3 +405,9 @@ static inline uint64_t pack_64_avx(const uint8_t* src) noexcept {
 
 #endif
 }
+
+void skeletonize_inplace(py::array_t<uint8_t> volume);
+
+void skeletonize_inplace_bits_past(py::array_t<uint8_t> volume);
+
+void skeletonize_inplace_bits(py::array_t<uint8_t> volume);

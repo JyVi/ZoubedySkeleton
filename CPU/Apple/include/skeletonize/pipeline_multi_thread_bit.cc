@@ -201,7 +201,7 @@ bool profile_euler_invariant(uint32_t n) noexcept {
 void skel::find_candidates_bit_work_unit_mutex(
     std::span<const uint64_t> img, const BitWorkUnit &unit,
     const std::array<AnchorConfig, 9> &anchors, int64_t b_offset,
-    std::array<uint64_t, 8192> &buffer_candidates,
+    std::array<uint64_t, 256> &buffer_candidates,
     uint64_t &index_candidates_array) {
   constexpr uint64_t BatchSize = 62;
   constexpr uint64_t SparseThreshold = 8;
@@ -293,6 +293,353 @@ void skel::find_candidates_bit_work_unit_mutex(
   }
 }
 
+void skel::find_candidates_bit_work_unit_mutex_new_scheduler(
+    std::span<const uint64_t> img,
+    const BitWorkUnit &unit,
+    const std::array<AnchorConfig, 9> &anchors,
+    int64_t b_offset,
+    std::array<uint64_t, 256> &buffer_candidates,
+    uint64_t &index_candidates_array) {
+
+    constexpr unsigned WordBits = 64;
+    constexpr unsigned BatchSize = 62;
+    constexpr unsigned BoundarySize = 2;
+    constexpr unsigned SparseThreshold = 8;
+
+    std::array<uint32_t, BatchSize> neighborhoods;
+
+    index_candidates_array = 0;
+
+    uint64_t first = unit.start_idx;
+    uint64_t remaining = unit.length;
+
+    // ================================================================
+    // Check whether the custom schedule really gives aligned loads.
+    //
+    // Bulk batches start at bit offset 1.
+    // Therefore:
+    //
+    //   1 + anchors[r].mem_offset == 0 (mod 64)
+    //
+    // This requires every anchor offset to have residue 63.
+    // ================================================================
+
+    bool use_aligned_scheduler =
+        (first & (WordBits - 1)) == 0;
+
+    for (const auto &anchor : anchors) {
+        if ((static_cast<uint64_t>(anchor.mem_offset) & 63u) != 63u) {
+            use_aligned_scheduler = false;
+            break;
+        }
+    }
+
+    // ================================================================
+    // Process a range of up to 62 voxels.
+    //
+    // Neighborhoods are generated only after both bit filters pass.
+    // The subsequent predicates are applied in stages so an entire
+    // batch can be rejected early.
+    // ================================================================
+
+    auto process_range = [&](uint64_t begin, unsigned count) {
+
+        if (count == 0)
+            return;
+
+        // count is always <= 62, so this shift is well-defined.
+        const uint64_t valid_mask =
+            (uint64_t{1} << count) - 1;
+
+        // ------------------------------------------------------------
+        // FILTER 1: center voxel must be foreground.
+        //
+        // Processes all voxels in the range simultaneously.
+        // ------------------------------------------------------------
+
+        const uint64_t main_bits =
+            load_bits_at_voxel(img, begin, count);
+
+        uint64_t mask = main_bits & valid_mask;
+
+        // Entire range is background.
+        // Skip all neighborhood calculations.
+        if (mask == 0)
+            return;
+
+        // ------------------------------------------------------------
+        // FILTER 2: selected border neighbor must be background.
+        // ------------------------------------------------------------
+
+        const size_t offset_first =
+            static_cast<size_t>(
+                static_cast<int64_t>(begin) + b_offset);
+
+        const uint64_t offset_bits =
+            load_bits_at_voxel(img, offset_first, count);
+
+        mask &= ~offset_bits & valid_mask;
+
+        // No candidate survived both bit filters.
+        if (mask == 0)
+            return;
+
+        const unsigned candidate_count =
+            std::popcount(mask);
+
+        // ============================================================
+        // NEIGHBORHOOD GENERATION
+        // ============================================================
+
+        if (count == BatchSize) {
+
+            // --------------------------------------------------------
+            // Full 62-voxel batch.
+            //
+            // Load the nine windows once.
+            // --------------------------------------------------------
+
+            const auto words =
+                load_neighborhood_words62_new(img, begin, anchors);
+
+            if (candidate_count <= SparseThreshold) {
+
+                // Sparse path:
+                // Only generate neighborhoods for surviving candidates.
+
+                uint64_t pending = mask;
+
+                while (pending != 0) {
+
+                    const unsigned bit =
+                        std::countr_zero(pending);
+
+                    pending &= pending - 1;
+
+                    neighborhoods[bit] =
+                        get_neighborhood62_at(words, bit);
+                }
+
+            } else {
+
+                // Dense path:
+                // Generate all 62 neighborhoods together.
+
+                get_neighborhoods62_unrolled(
+                    words,
+                    neighborhoods);
+            }
+
+        } else {
+
+            // --------------------------------------------------------
+            // Partial range: leading edge, boundary pair, or tail.
+            // --------------------------------------------------------
+
+            if (candidate_count <= SparseThreshold) {
+
+                // Sparse partial path:
+                // Generate only neighborhoods for surviving candidates.
+
+                uint64_t pending = mask;
+
+                while (pending != 0) {
+
+                    const unsigned bit =
+                        std::countr_zero(pending);
+
+                    pending &= pending - 1;
+
+                    neighborhoods[bit] =
+                        get_neighborhood(
+                            img,
+                            begin + bit,
+                            anchors);
+                }
+
+            } else {
+
+                // Dense partial path:
+                // Generate all neighborhoods in this partial range.
+
+                get_neighborhoods_bit_plane_intermediary(
+                    img,
+                    begin,
+                    count,
+                    anchors,
+                    std::span<uint32_t>(neighborhoods).first(count));
+            }
+        }
+
+        // ============================================================
+        // FILTER 3: ENDPOINT REJECTION
+        //
+        // Evaluate endpoints for all surviving candidates.
+        // If all candidates are endpoints, stop the entire batch.
+        // ============================================================
+
+        uint64_t non_endpoint_mask = 0;
+
+        {
+            uint64_t pending = mask;
+
+            while (pending != 0) {
+
+                const unsigned bit =
+                    std::countr_zero(pending);
+
+                pending &= pending - 1;
+
+                const uint64_t bit_mask =
+                    uint64_t{1} << bit;
+
+                if (!is_endpoint(neighborhoods[bit])) {
+                    non_endpoint_mask |= bit_mask;
+                }
+            }
+        }
+
+        if (non_endpoint_mask == 0)
+            return;
+
+        // ============================================================
+        // FILTER 4: EULER INVARIANT
+        //
+        // Euler is expensive, so evaluate it only for non-endpoints.
+        // Stop the entire batch if none pass.
+        // ============================================================
+
+        uint64_t euler_mask = 0;
+
+        {
+            uint64_t pending = non_endpoint_mask;
+
+            while (pending != 0) {
+
+                const unsigned bit =
+                    std::countr_zero(pending);
+
+                pending &= pending - 1;
+
+                if (profile_euler_invariant(neighborhoods[bit])) {
+                    euler_mask |= uint64_t{1} << bit;
+                }
+            }
+        }
+
+        if (euler_mask == 0)
+            return;
+
+        // ============================================================
+        // FILTER 5: WHOLE-FRONTIER SIMPLE POINT TEST
+        //
+        // Only candidates that survived all previous filters reach
+        // this stage.
+        // ============================================================
+
+        {
+            uint64_t pending = euler_mask;
+
+            while (pending != 0) {
+
+                const unsigned bit =
+                    std::countr_zero(pending);
+
+                pending &= pending - 1;
+
+                const uint32_t n = neighborhoods[bit];
+
+                if (is_simple_point_whole_frontier_precomp(n)) {
+
+                    buffer_candidates[index_candidates_array++] =
+                        begin + bit;
+                }
+            }
+        }
+    };
+
+    // ================================================================
+    // SCHEDULER
+    //
+    // When aligned:
+    //
+    //   1 | 62 | 2 | 62 | 2 | 62 | ... | 1
+    //
+    //   offset 0:  one voxel
+    //   offset 1:  62 voxels
+    //   offset 63: two voxels (63 and 0 of next word)
+    //
+    // The bulk batches begin at offset 1, which aligns the nine
+    // neighborhood loads when all anchor offsets have residue 63.
+    //
+    // When alignment conditions are not satisfied, retain the
+    // original 62-voxel scheduling.
+    // ================================================================
+
+    if (use_aligned_scheduler) {
+
+        while (remaining > 0) {
+
+            const unsigned offset =
+                static_cast<unsigned>(first & (WordBits - 1));
+
+            unsigned count;
+
+            if (offset == 0) {
+
+                // Initial voxel of a word.
+                count = 1;
+
+            } else if (offset == 1) {
+
+                // Optimized 62-voxel interior.
+                count = static_cast<unsigned>(
+                    std::min<uint64_t>(BatchSize, remaining));
+
+            } else if (offset == 63) {
+
+                // Word boundary:
+                // last voxel of this word and first voxel of next.
+                count = static_cast<unsigned>(
+                    std::min<uint64_t>(BoundarySize, remaining));
+
+            } else {
+
+                // Arbitrary leading/trailing partial range.
+                // Stop before reaching offset 63.
+                count = static_cast<unsigned>(
+                    std::min<uint64_t>(63 - offset, remaining));
+            }
+
+            process_range(first, count);
+
+            first += count;
+            remaining -= count;
+        }
+
+    } else {
+
+        // ------------------------------------------------------------
+        // Fallback: original 62-voxel scheduling.
+        //
+        // Keeps the bulk processing path without paying the extra
+        // boundary/partial-range scheduling overhead.
+        // ------------------------------------------------------------
+
+        while (remaining > 0) {
+
+            const unsigned count =
+                static_cast<unsigned>(
+                    std::min<uint64_t>(BatchSize, remaining));
+
+            process_range(first, count);
+
+            first += count;
+            remaining -= count;
+        }
+    }
+}
+
 void skel::find_simple_point_candidates_packed_parallel(
     std::span<const uint64_t> img, std::vector<uint64_t> &candidates,
     const std::array<AnchorConfig, 9> &anchor_configs, uint32_t D, uint32_t H,
@@ -366,7 +713,8 @@ void skel::find_simple_point_candidates_packed_parallel_mutex(
     std::span<const uint64_t> img, std::vector<uint64_t> &candidates,
     const std::array<AnchorConfig, 9> &anchor_configs, uint32_t D, uint32_t H,
     uint32_t W, int64_t b_offset) {
-  constexpr uint32_t VoxelsPerUnit = 8192;
+  constexpr uint32_t VoxelsPerUnit = 256;
+  //constexpr uint32_t VoxelsPerUnit = 32768;
   constexpr size_t LocalCandidateCapacity = VoxelsPerUnit;
   const size_t total_units = get_total_bit_work_units<VoxelsPerUnit>(D, H, W);
 
@@ -383,15 +731,15 @@ void skel::find_simple_point_candidates_packed_parallel_mutex(
         // Each worker owns its own write buffer.
         const size_t worker_id = BS::this_thread::get_index().value();
         WriteBuffer &local_write_buffer = writebuffer[worker_id];
-        std::array<uint64_t, LocalCandidateCapacity> buffer_candidates;
+        thread_local std::array<uint64_t, LocalCandidateCapacity> buffer_candidates;
         uint64_t index_candidates_array = 0;
         const BitWorkUnit unit =
             get_bit_work_unit<VoxelsPerUnit>(unit_id, D, H, W);
 
+        //find_candidates_bit_work_unit_mutex_new_scheduler(img, unit, anchor_configs, b_offset,
         find_candidates_bit_work_unit_mutex(img, unit, anchor_configs, b_offset,
                                             buffer_candidates,
                                             index_candidates_array);
-
         // Same mutex/write-buffer logic as the byte implementation.
         if (index_candidates_array == 0)
           return;
@@ -459,7 +807,7 @@ void skel::compute_thin_image_multi_threaded_bit(std::span<uint64_t> img,
           read_img, candidates, anchor_configs, D, H, W, b_offset);
 
       std::sort(std::execution::par_unseq, candidates.begin(),
-                candidates.end());
+          candidates.end());
       unchanged_borders += sequential_recheck_bit(
           img, candidates, anchor_configs, stride_y, stride_z);
     }

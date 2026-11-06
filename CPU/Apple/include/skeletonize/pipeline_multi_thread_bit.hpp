@@ -30,6 +30,7 @@ constexpr size_t get_total_bit_work_units(uint32_t D, uint32_t H, uint32_t W) {
 }
 
 template <uint32_t VoxelsPerUnit>
+__attribute__((noinline))
 inline BitWorkUnit get_bit_work_unit(size_t unit_index, uint32_t D, uint32_t H,
                                      uint32_t W) {
   static_assert(VoxelsPerUnit > 0);
@@ -69,13 +70,21 @@ void find_candidates_bit_work_unit(std::span<const uint64_t> img,
 void find_candidates_bit_work_unit_mutex(
     std::span<const uint64_t> img, const BitWorkUnit &unit,
     const std::array<AnchorConfig, 9> &anchors, int64_t b_offset,
-    std::array<uint64_t, 8192> &buffer_candidates,
+    std::array<uint64_t, 256> &buffer_candidates,
     uint64_t &index_candidates_array);
 
 void mutex_write(WriteBuffer &local_write_buffer,
                  std::span<uint64_t> span_array,
                  uint64_t &index_candidates_array, std::mutex &candidates_mutex,
                  std::vector<uint64_t> &candidates);
+
+void find_candidates_bit_work_unit_mutex_new_scheduler(
+    std::span<const uint64_t> img,
+    const BitWorkUnit &unit,
+    const std::array<AnchorConfig, 9> &anchors,
+    int64_t b_offset,
+    std::array<uint64_t, 256> &buffer_candidates,
+    uint64_t &index_candidates_array);
 
 void find_simple_point_candidates_packed_parallel_mutex(
     std::span<const uint64_t> img, std::vector<uint64_t> &candidates,

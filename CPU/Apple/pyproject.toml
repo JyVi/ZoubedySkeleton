@@ -4,9 +4,31 @@ version = "0.1.0"
 description = "3D skeletonization with a C++ backend"
 readme = "README.md"
 requires-python = ">=3.9"
+license = "BSD-3-Clause"
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+]
+
 dependencies = [
     "numpy",
 ]
+
+[project.urls]
+Repository = "https://github.com/JyVi/ZoubedySkeleton.git@main#subdirectory=CPU/Apple"
+Homepage = "https://github.com/JyVi/ZoubedySkeleton"
+Issues = "https://github.com/JyVi/ZoubedySkeleton/issues"
 
 [dependency-groups]
 dev = [
@@ -32,6 +54,7 @@ sdist.inclusion-mode = "explicit"
 sdist.include = [
     "pyproject.toml",
     "README.md",
+    "LICENCE",
     "CMakeLists.txt",
     "include/skeletonize/**",
     "python/bindings.cc",
@@ -46,8 +69,9 @@ sdist.exclude = [
 [tool.scikit-build.cmake.define]
 BUILD_PYTHON_BINDINGS = "ON"
 BUILD_SKELETONIZE_APP = "OFF"
-SKELETONIZE_NATIVE_OPTIMIZATION = "ON"
-SKELETONIZE_FAST_MATH = "OFF"
+SKELETONIZE_NATIVE_OPTIMIZATION = "OFF"
+SKELETONIZE_FAST_MATH = "ON"
+SKELETONIZE_USE_SYSTEM_TBB = "OFF"
 
 [tool.scikit-build.env]
 CMAKE_BUILD_PARALLEL_LEVEL = ""
