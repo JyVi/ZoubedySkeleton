@@ -1,8 +1,10 @@
 #pragma once
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 #include <sys/types.h>
 #include <vector>

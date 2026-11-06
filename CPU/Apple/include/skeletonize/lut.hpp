@@ -154,7 +154,7 @@ inline constexpr int EULER_MAX = [] {
 }();
 
 template <std::size_t Octant>
-inline int euler_octant_term(uint32_t n) noexcept {
+constexpr inline int euler_octant_term(uint32_t n) noexcept {
     constexpr auto bits = OCTANT_INDICES_27[Octant];
 
     const unsigned index =
