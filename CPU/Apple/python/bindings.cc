@@ -167,11 +167,12 @@ void skeletonize_inplace_bits(py::array_t<uint8_t> volume) {
 PYBIND11_MODULE(_skeletonize_core, m, py::mod_gil_not_used()) {
   m.doc() = "3D skeletonization using Lee94 thinning algorithm";
 
-  m.def("skeletonize", &skeletonize_inplace,
-        "Compute the 3D skeleton of a binary volume", py::arg("volume"));
-  m.def("skeletonize_bits", &skeletonize_inplace_bits,
+  //m.def("zoubiskel", &skeletonize_inplace,
+  //      "Compute the 3D skeleton of a binary volume", py::arg("volume"));
+  m.def("zoubiskel3d", &skeletonize_inplace_bits,
         "Compute the 3D skeleton of a binary volume", py::arg("volume"));
 
+  /*
   // Expose the main function
   m.def("skeletonize_raw", &skel::compute_thin_image,
         "Compute the 3D skeleton of a binary volume", py::arg("volume"),
@@ -189,7 +190,7 @@ PYBIND11_MODULE(_skeletonize_core, m, py::mod_gil_not_used()) {
   m.def("is_euler_invariant", &skel::is_euler_invariant,
         "Check if removing a point preserves the Euler characteristic",
         py::arg("packed_neighborhood"));
-
+  */
   /*
   m.def("init_tracing", &skel::init_tracing,
         "Initialize the Perfetto tracer (call once)");
