@@ -205,6 +205,10 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
     install(TARGETS TBB::tbb
         LIBRARY DESTINATION skeletonize3d
     )
+    set_target_properties(_skeletonize_core PROPERTIES
+            INSTALL_RPATH "$ORIGIN"
+            BUILD_WITH_INSTALL_RPATH TRUE
+        )
 
 endif()
 
