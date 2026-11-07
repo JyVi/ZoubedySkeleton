@@ -19,7 +19,7 @@ jobs:
           submodules: true
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.21.3
+        uses: pypa/cibuildwheel@v4.3.5
         with:
           package-dir: CPU/Apple
           output-dir: wheelhouse
