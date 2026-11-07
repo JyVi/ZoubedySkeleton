@@ -202,21 +202,18 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
     target_link_libraries(skeletonize_core PUBLIC
         TBB::tbb
     )
-    if(TARGET tbb)
-            get_target_property(is_imported tbb IMPORTED)
-            if(NOT is_imported)
-                install(TARGETS tbb
-                    LIBRARY DESTINATION skeletonize3d
-                    RUNTIME DESTINATION skeletonize3d
-                )
-            endif()
-        endif()
-        # --- FIX END ---
+    get_target_property(TBB_LIB_PATH tbb LOCATION)
 
-        set_target_properties(_skeletonize_core PROPERTIES
-            INSTALL_RPATH "$ORIGIN"
-            BUILD_WITH_INSTALL_RPATH TRUE
+    if(TBB_LIB_PATH)
+        install(FILES ${TBB_LIB_PATH}
+            DESTINATION skeletonize3d
         )
+    endif()
+
+    set_target_properties(_skeletonize_core PROPERTIES
+        INSTALL_RPATH "$ORIGIN"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
 
 endif()
 
