@@ -202,6 +202,9 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
     target_link_libraries(skeletonize_core PUBLIC
         TBB::tbb
     )
+    install(TARGETS TBB::tbb
+        LIBRARY DESTINATION skeletonize3d
+    )
 
 endif()
 
