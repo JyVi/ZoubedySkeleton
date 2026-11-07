@@ -202,29 +202,21 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
     target_link_libraries(skeletonize_core PUBLIC
         TBB::tbb
     )
-
     if(TARGET tbb)
-        get_target_property(is_imported tbb IMPORTED)
-        if(NOT is_imported)
-            install(TARGETS tbb
-                LIBRARY DESTINATION skeletonize3d
-                RUNTIME DESTINATION skeletonize3d
-            )
+            get_target_property(is_imported tbb IMPORTED)
+            if(NOT is_imported)
+                install(TARGETS tbb
+                    LIBRARY DESTINATION skeletonize3d
+                    RUNTIME DESTINATION skeletonize3d
+                )
+            endif()
         endif()
-    endif()
+        # --- FIX END ---
 
-    # --- FIX START ---
-    # Explicitly prevent CMake from stripping the RPATH during install
-    set_target_properties(_skeletonize_core PROPERTIES
-        INSTALL_RPATH "$ORIGIN"
-        BUILD_WITH_INSTALL_RPATH TRUE
-        SKIP_BUILD_RPATH FALSE
-        INSTALL_RPATH_USE_LINK_PATH FALSE
-    )
-
-    # Force CMake to keep the RPATH on install
-    set(CMAKE_SKIP_INSTALL_RPATH FALSE)
-    # --- FIX END ---
+        set_target_properties(_skeletonize_core PROPERTIES
+            INSTALL_RPATH "$ORIGIN"
+            BUILD_WITH_INSTALL_RPATH TRUE
+        )
 
 endif()
 
