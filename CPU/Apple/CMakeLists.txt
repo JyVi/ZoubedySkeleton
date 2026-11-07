@@ -210,7 +210,7 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
         )
     endif()
 
-    set_target_properties(_skeletonize_core PROPERTIES
+    set_target_properties(skeletonize_core PROPERTIES
         INSTALL_RPATH "$ORIGIN"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
