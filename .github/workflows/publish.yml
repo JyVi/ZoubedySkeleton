@@ -3,7 +3,7 @@ name: Build and Publish to TestPyPI
 on:
   release:
     types: [published]
-  workflow_dispatch:   # Allows manual triggering from the GitHub Actions tab
+  workflow_dispatch:
 
 jobs:
   build_wheels:
@@ -11,7 +11,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        # Only Linux and macOS, as Windows is blocked by your CMakeLists.txt
         os: [ubuntu-26.04, macos-latest]
 
     steps:
@@ -20,14 +19,17 @@ jobs:
           submodules: true
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.3.5
+        uses: pypa/cibuildwheel@v2.21.3
         with:
           package-dir: CPU/Apple
           output-dir: wheelhouse
         env:
-          # Build for Python 3.9 through 3.13
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-*"
           CIBW_SKIP: "cp*-win*"
+          # FORCE manylinux_2_28 to get GCC 11+ and avoid the TBB conflict
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
+          CIBW_BUILD_VERBOSITY: 3
 
       - uses: actions/upload-artifact@v4
         with:
@@ -52,7 +54,6 @@ jobs:
     name: Publish to TestPyPI
     needs: [build_wheels]
     runs-on: ubuntu-26.04
-    # Run on manual dispatch OR when a release is published
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && github.event.action == 'published')
     steps:
       - uses: actions/download-artifact@v4
