@@ -202,8 +202,11 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
     target_link_libraries(skeletonize_core PUBLIC
         TBB::tbb
     )
-    install(FILES $<TARGET_FILE:tbb>
+    install(DIRECTORY $<TARGET_FILE_DIR:tbb>/
         DESTINATION skeletonize3d
+        FILES_MATCHING PATTERN "libtbb*"
+        PATTERN "*.cmake" EXCLUDE
+        PATTERN "*.pc" EXCLUDE
     )
 
 endif()
