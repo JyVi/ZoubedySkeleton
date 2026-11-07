@@ -268,6 +268,11 @@ if(BUILD_PYTHON_BINDINGS)
             "Found pybind11: ${pybind11_VERSION}")
 
     endif()
+    if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
+            set(CMAKE_INSTALL_RPATH "$ORIGIN")
+            set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
+            set(CMAKE_SKIP_BUILD_RPATH FALSE)
+        endif()
 
     pybind11_add_module(_skeletonize_core
         python/bindings.cc
@@ -278,6 +283,13 @@ if(BUILD_PYTHON_BINDINGS)
     )
 
     #skeletonize_apply_optimization(skeletonize_core)
+    if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
+            set_target_properties(_skeletonize_core PROPERTIES
+                INSTALL_RPATH "$ORIGIN"
+                BUILD_WITH_INSTALL_RPATH TRUE
+                SKIP_BUILD_RPATH FALSE
+            )
+        endif()
 
     install(TARGETS _skeletonize_core
         LIBRARY DESTINATION skeletonize3d
