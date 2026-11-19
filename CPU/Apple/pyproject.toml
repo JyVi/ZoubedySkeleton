@@ -3,7 +3,8 @@ name = "zoubiskel3d"
 version = "0.1.0"
 description = "3D skeletonization with a C++ backend"
 readme = "README.md"
-requires-python = ">=3.9"
+#requires-python = ">=3.9"
+requires-python = ">=3.13"
 license = "BSD-3-Clause"
 
 classifiers = [

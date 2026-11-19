@@ -147,6 +147,11 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
         set(TBB_EXAMPLES OFF CACHE BOOL "" FORCE)
         set(TBBMALLOC_BUILD OFF CACHE BOOL "" FORCE)
         set(TBBMALLOC_PROXY_BUILD OFF CACHE BOOL "" FORCE)
+        set(TBB_TEST OFF CACHE BOOL "Disable tests" FORCE)
+        set(TBB_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
+        set(TBB_ENABLE_IPO OFF CACHE BOOL "DISABLE Link-Time Optimization" FORCE)
+        set(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH ON CACHE BOOL "Skip hwloc topology checks" FORCE)
+        set(TBB_STRICT OFF CACHE BOOL "" FORCE)
 
         FetchContent_Declare(
             oneTBB
