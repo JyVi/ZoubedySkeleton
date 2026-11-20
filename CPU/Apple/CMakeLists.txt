@@ -239,25 +239,25 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
             # After building oneTBB, save its archive and public headers.
             if(SKELETONIZE_STATIC_TBB)
 
-                add_custom_target(skeletonize_cache_oneTBB_static
+              add_custom_target(skeletonize_cache_oneTBB_static
 
-                    COMMAND ${CMAKE_COMMAND} -E make_directory
-                        "${SKELETONIZE_TBB_CACHE_DIR}/lib"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${SKELETONIZE_TBB_CACHE_DIR}/lib"
 
-                    COMMAND ${CMAKE_COMMAND} -E make_directory
-                        "${TBB_CACHED_INCLUDE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "${TBB_CACHED_INCLUDE_DIR}"
 
-                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                        "$<TARGET_FILE:tbb>"
-                        "${TBB_CACHED_LIBRARY}"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:tbb>"
+                    "${TBB_CACHED_LIBRARY}"
 
-                    COMMAND ${CMAKE_COMMAND} -E copy_directory
-                        "${FETCHCONTENT_SOURCE_DIR_ONETBB}/include"
-                        "${TBB_CACHED_INCLUDE_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E copy_directory
+                    "${onetbb_SOURCE_DIR}/include"
+                    "${TBB_CACHED_INCLUDE_DIR}"
 
-                    DEPENDS tbb
-                    VERBATIM
-                )
+                DEPENDS tbb
+                VERBATIM
+            )
 
             endif()
 
