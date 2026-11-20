@@ -1,3 +1,5 @@
+
+
 name: Build and Publish to TestPyPI
 
 on:
@@ -9,27 +11,27 @@ jobs:
   build_wheels:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+
     strategy:
       matrix:
         os: [ubuntu-26.04]
-        #os: [ubuntu-26.04, macos-latest]
+        # os: [ubuntu-26.04, macos-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           submodules: true
-      - name: Cache C++ dependencies
+
+      # Cache only compiled objects. Do not share CMake's generated
+      # FetchContent build directory between independent wheel builds.
+      - name: Cache ccache
         uses: actions/cache@v4
         with:
-          path: |
-            /tmp/ccache
-            /tmp/shared_fetch
-          key: >-
-            ${{ runner.os }}-${{ runner.arch }}-cpp-
-            ${{ hashFiles('CPU/Apple/CMakeLists.txt') }}-
-            ${{ github.run_id }}
+          path: ${{ runner.temp }}/ccache
+          key: ccache-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('CPU/Apple/**/*.cpp', 'CPU/Apple/**/*.cc', 'CPU/Apple/**/*.cxx', 'CPU/Apple/**/*.h', 'CPU/Apple/**/*.hpp', 'CPU/Apple/**/CMakeLists.txt') }}
           restore-keys: |
-            ${{ runner.os }}-${{ runner.arch }}-cpp-
+            ccache-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.3.5
@@ -37,16 +39,36 @@ jobs:
           package-dir: CPU/Apple
           output-dir: wheelhouse
         env:
-          #CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_BUILD: "cp313-* cp314-*"
-          #CIBW_BUILD: "cp313-*"
           CIBW_SKIP: "cp*-win*"
-          # FORCE manylinux_2_28 to get GCC 11+ and avoid the TBB conflict
+
+          # manylinux image and architecture configuration
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
           CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
+
           CIBW_BUILD_VERBOSITY: 3
 
-      - uses: actions/upload-artifact@v4
+          # Install ccache inside each Linux build container.
+          # manylinux_2_28 uses dnf; musllinux uses apk.
+          CIBW_BEFORE_ALL_LINUX: >
+            if command -v dnf >/dev/null; then
+              dnf install -y ccache;
+            elif command -v apk >/dev/null; then
+              apk add --no-cache ccache;
+            else
+              echo "Unsupported Linux package manager" >&2;
+              exit 1;
+            fi
+
+          # cibuildwheel mounts the host filesystem at /host.
+          # This lets the container use the GitHub Actions cache.
+          CIBW_ENVIRONMENT_LINUX: >-
+            CCACHE_DIR=/host${{ runner.temp }}/ccache
+            CCACHE_MAXSIZE=5G
+            CMAKE_ARGS="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
         with:
           name: cibw-wheels-${{ matrix.os }}
           path: wheelhouse/*.whl
@@ -54,27 +76,40 @@ jobs:
   build_sdist:
     name: Build source distribution
     runs-on: ubuntu-26.04
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Build sdist
         run: |
           cd CPU/Apple
           pipx run build --sdist
-      - uses: actions/upload-artifact@v4
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
         with:
           name: cibw-sdist
           path: CPU/Apple/dist/*.tar.gz
 
   publish:
     name: Publish to TestPyPI
-    needs: [build_wheels]
+    needs:
+      - build_wheels
+      - build_sdist
+
     runs-on: ubuntu-26.04
+
     permissions:
       id-token: write
 
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'release' && github.event.action == 'published')
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'release' && github.event.action == 'published')
+
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
           pattern: cibw-*
           path: dist
@@ -84,6 +119,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1.14
         with:
           repository-url: https://test.pypi.org/legacy/
-          #password: ${{ secrets.PYPYTEST }}
-          #provenance: true
           attestations: true
