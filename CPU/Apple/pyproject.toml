@@ -1,10 +1,9 @@
 [project]
 name = "zoubiskel3d"
-version = "0.3.0"
+version = "1.0.0"
 description = "3D skeletonization with a C++ backend"
 readme = "README.md"
 requires-python = ">=3.9"
-#requires-python = ">=3.13"
 license = "BSD-3-Clause"
 
 classifiers = [
@@ -74,23 +73,6 @@ SKELETONIZE_NATIVE_OPTIMIZATION = "OFF"
 SKELETONIZE_FAST_MATH = "ON"
 SKELETONIZE_USE_SYSTEM_TBB = "OFF"
 SKELETONIZE_STATIC_TBB = "ON"
-#CMAKE_C_COMPILER_LAUNCHER = "ccache"
-#CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
-#FETCHCONTENT_BASE_DIR = "/tmp/shared_fetch"
 
 [tool.scikit-build.env]
 CMAKE_BUILD_PARALLEL_LEVEL = ""
-
-[tool.cibuildwheel]
-skip = "cp*-win*"
-
-[tool.cibuildwheel.linux]
-manylinux-x86_64-image = "manylinux_2_28"
-manylinux-aarch64-image = "manylinux_2_28"
-manylinux-pypy_x86_64-image = "manylinux_2_28"
-#before-all = "dnf install -y ccache"
-#environment = """
-#    CCACHE_DIR=/tmp/ccache
-#    CCACHE_MAXSIZE=5G
-#    CMAKE_ARGS="-DFETCHCONTENT_BASE_DIR=/tmp/shared_fetch"
-#"""
