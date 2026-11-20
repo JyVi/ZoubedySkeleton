@@ -252,7 +252,7 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
                         "${TBB_CACHED_LIBRARY}"
 
                     COMMAND ${CMAKE_COMMAND} -E copy_directory
-                        "${oneTBB_SOURCE_DIR}/include"
+                        "${FETCHCONTENT_SOURCE_DIR_ONETBB}/include"
                         "${TBB_CACHED_INCLUDE_DIR}"
 
                     DEPENDS tbb
