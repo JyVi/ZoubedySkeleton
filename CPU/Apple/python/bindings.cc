@@ -11,7 +11,7 @@
 
 #include "bindings.hpp"
 #include "skeletonize/lut.hpp"
-//#include "skeletonize/perfetto_tracing.hpp"
+// #include "skeletonize/perfetto_tracing.hpp"
 #include "skeletonize/pipeline.hpp"
 #include "skeletonize/pipeline_multi_thread.hpp"
 #include "skeletonize/pipeline_multi_thread_bit.hpp"
@@ -73,7 +73,7 @@ void skeletonize_inplace(py::array_t<uint8_t> volume) {
 }
 
 void skeletonize_inplace_bits_past(py::array_t<uint8_t> volume) {
- const auto [D, W, H, data] = verification_checkup(volume);
+  const auto [D, W, H, data] = verification_checkup(volume);
   const size_t total_voxels = D * H * W;
   const size_t word_count = total_voxels / 64 + (total_voxels % 64 != 0);
 
@@ -164,12 +164,200 @@ void skeletonize_inplace_bits(py::array_t<uint8_t> volume) {
   }
 }
 
+static void pack_bytes_to_bits_padded_fast(const uint8_t *src, uint64_t *dst,
+                                           size_t D, size_t H, size_t W,
+                                           size_t D_pad, size_t H_pad,
+                                           size_t W_pad) {
+  const size_t H_pad_W_pad = H_pad * W_pad;
+  constexpr size_t DepthsPerTask = 16;
+
+  const auto pack_depth = [&](size_t d_begin, size_t d_end) noexcept {
+    for (size_t d = d_begin; d < d_end; ++d) {
+      size_t L_base_d = (d + 1) * H_pad_W_pad;
+      const uint8_t *src_plane = src + d * H * W;
+
+      for (size_t h = 0; h < H; ++h) {
+        size_t L_start = L_base_d + (h + 1) * W_pad + 1;
+        size_t word_idx = L_start >> 6;
+        size_t bit_offset = L_start & 63;
+
+        const uint8_t *src_row = src_plane + h * W;
+        size_t full_chunks = W / 64;
+
+        if (bit_offset == 0) {
+          for (size_t i = 0; i < full_chunks; ++i) {
+            dst[word_idx + i] = pack_64_fast(src_row + i * 64);
+          }
+        } else {
+          size_t shift_right = 64 - bit_offset;
+          for (size_t i = 0; i < full_chunks; ++i) {
+            uint64_t val = pack_64_fast(src_row + i * 64);
+            dst[word_idx + i] |= (val << bit_offset);
+            dst[word_idx + i + 1] |= (val >> shift_right);
+          }
+        }
+
+        size_t tail_size = W % 64;
+        if (tail_size != 0) {
+          uint64_t val = pack_tail(src_row + full_chunks * 64, tail_size);
+          dst[word_idx + full_chunks] |= (val << bit_offset);
+          if (bit_offset != 0 && tail_size + bit_offset > 64) {
+            dst[word_idx + full_chunks + 1] |= (val >> (64 - bit_offset));
+          }
+        }
+      }
+    }
+  };
+
+  const size_t threads = std::max<size_t>(1, skel::pool.get_thread_count());
+  const size_t task_count = std::min(threads, D / DepthsPerTask);
+
+  if (task_count >= 2) {
+    std::vector<std::future<void>> futures;
+    futures.reserve(task_count);
+    for (size_t t = 0; t < task_count; ++t) {
+      size_t begin = D * t / task_count;
+      size_t end = D * (t + 1) / task_count;
+      futures.emplace_back(
+          skel::pool.submit_task([=, &pack_depth] { pack_depth(begin, end); }));
+    }
+    for (auto &f : futures)
+      f.get();
+  } else {
+    pack_depth(0, D);
+  }
+}
+
+static void unpack_bits_to_bytes_padded_fast(const uint64_t *src, uint8_t *dst,
+                                             size_t D, size_t H, size_t W,
+                                             size_t D_pad, size_t H_pad,
+                                             size_t W_pad) {
+  const size_t H_pad_W_pad = H_pad * W_pad;
+  constexpr size_t DepthsPerTask = 16;
+
+  const auto unpack_depth = [&](size_t d_begin, size_t d_end) noexcept {
+    for (size_t d = d_begin; d < d_end; ++d) {
+      size_t L_base_d = (d + 1) * H_pad_W_pad;
+      uint8_t *dst_plane = dst + d * H * W;
+
+      for (size_t h = 0; h < H; ++h) {
+        size_t L_start = L_base_d + (h + 1) * W_pad + 1;
+        size_t word_idx = L_start >> 6;
+        size_t bit_offset = L_start & 63;
+
+        uint8_t *dst_row = dst_plane + h * W;
+        size_t full_chunks = W / 64;
+
+        if (bit_offset == 0) {
+          for (size_t i = 0; i < full_chunks; ++i) {
+            unpack_64_fast(src[word_idx + i], dst_row + i * 64);
+          }
+        } else {
+          size_t shift_left = 64 - bit_offset;
+          for (size_t i = 0; i < full_chunks; ++i) {
+            uint64_t val = (src[word_idx + i] >> bit_offset) |
+                           (src[word_idx + i + 1] << shift_left);
+            unpack_64_fast(val, dst_row + i * 64);
+          }
+        }
+
+        size_t tail_size = W % 64;
+        if (tail_size != 0) {
+          uint64_t val;
+          if (bit_offset == 0) {
+            val = src[word_idx + full_chunks];
+          } else {
+            val = (src[word_idx + full_chunks] >> bit_offset) |
+                  (src[word_idx + full_chunks + 1] << (64 - bit_offset));
+          }
+          for (size_t b = 0; b < tail_size; ++b) {
+            dst_row[full_chunks * 64 + b] =
+                static_cast<uint8_t>((val >> b) & 1u);
+          }
+        }
+      }
+    }
+  };
+
+  const size_t threads = std::max<size_t>(1, skel::pool.get_thread_count());
+  const size_t task_count = std::min(threads, D / DepthsPerTask);
+
+  if (task_count >= 2) {
+    std::vector<std::future<void>> futures;
+    futures.reserve(task_count);
+    for (size_t t = 0; t < task_count; ++t) {
+      size_t begin = D * t / task_count;
+      size_t end = D * (t + 1) / task_count;
+      futures.emplace_back(skel::pool.submit_task(
+          [=, &unpack_depth] { unpack_depth(begin, end); }));
+    }
+    for (auto &f : futures)
+      f.get();
+  } else {
+    unpack_depth(0, D);
+  }
+}
+
+py::array_t<uint8_t>
+skeletonize_inplace_bits_return(py::array_t<uint8_t> volume) {
+  const auto [D, H, W, data] = verification_checkup(volume);
+
+  if (D == 0 || H == 0 || W == 0) {
+    return py::array_t<uint8_t>({D, H, W});
+  }
+
+  const uint32_t D_pad = D + 2;
+  const uint32_t H_pad = H + 2;
+  const uint32_t W_pad = W + 2;
+
+  const size_t total_voxels_pad = (size_t)D_pad * H_pad * W_pad;
+  const size_t word_count_pad = (total_voxels_pad + 63) / 64;
+
+  std::unique_ptr<uint64_t[]> packed(new uint64_t[word_count_pad]());
+
+  py::array_t<uint8_t> result_volume({D, H, W});
+  auto result_buf = result_volume.request();
+  uint8_t *result_data = static_cast<uint8_t *>(result_buf.ptr);
+
+  const auto pack_start = std::chrono::steady_clock::now();
+  {
+    py::gil_scoped_release release;
+
+    pack_bytes_to_bits_padded_fast(data, packed.get(), D, H, W, D_pad, H_pad,
+                                   W_pad);
+
+    const auto pack_end = std::chrono::steady_clock::now();
+    std::cout << "uint8 -> bit-packed copy (with padding): "
+              << std::chrono::duration<double, std::milli>(pack_end -
+                                                           pack_start)
+                     .count()
+              << " ms\n";
+
+    skel::compute_thin_image_multi_threaded_bit(
+        std::span<uint64_t>(packed.get(), word_count_pad), D_pad, H_pad, W_pad);
+
+    const auto unpack_start = std::chrono::steady_clock::now();
+
+    unpack_bits_to_bytes_padded_fast(packed.get(), result_data, D, H, W, D_pad,
+                                     H_pad, W_pad);
+
+    const auto unpack_end = std::chrono::steady_clock::now();
+    std::cout << "bit-packed -> uint8 copy (with unpadding): "
+              << std::chrono::duration<double, std::milli>(unpack_end -
+                                                           unpack_start)
+                     .count()
+              << " ms\n";
+  }
+
+  return result_volume;
+}
+
 PYBIND11_MODULE(_skeletonize_core, m, py::mod_gil_not_used()) {
   m.doc() = "3D skeletonization using Lee94 thinning algorithm";
 
-  //m.def("zoubiskel", &skeletonize_inplace,
-  //      "Compute the 3D skeleton of a binary volume", py::arg("volume"));
-  m.def("zoubiskel3d", &skeletonize_inplace_bits,
+  // m.def("zoubiskel", &skeletonize_inplace,
+  //       "Compute the 3D skeleton of a binary volume", py::arg("volume"));
+  m.def("zoubiskel3d", &skeletonize_inplace_bits_return,
         "Compute the 3D skeleton of a binary volume", py::arg("volume"));
 
   /*

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.28)
 
-project(skeletonize3d LANGUAGES CXX)
+project(zoubiskel3d LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -252,7 +252,7 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
     )
   if(NOT SKELETONIZE_STATIC_TBB)
     install(DIRECTORY $<TARGET_FILE_DIR:tbb>/
-            DESTINATION skeletonize3d
+            DESTINATION zoubiskel3d
             FILES_MATCHING PATTERN "libtbb*"
             PATTERN "*.cmake" EXCLUDE
             PATTERN "*.pc" EXCLUDE
@@ -329,8 +329,8 @@ if(BUILD_PYTHON_BINDINGS)
   endif()
 
   install(TARGETS _skeletonize_core
-        LIBRARY DESTINATION skeletonize3d
-        RUNTIME DESTINATION skeletonize3d
+        LIBRARY DESTINATION zoubiskel3d
+        RUNTIME DESTINATION zoubiskel3d
     )
 endif()
 

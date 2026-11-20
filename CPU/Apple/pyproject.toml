@@ -48,7 +48,7 @@ build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
 cmake.build-type = "Release"
-wheel.packages = ["python/skeletonize3d"]
+wheel.packages = ["python/zoubiskel3d"]
 build-dir = "build/{wheel_tag}"
 build.tool-args = ["-j0"]
 sdist.inclusion-mode = "explicit"
@@ -60,11 +60,11 @@ sdist.include = [
     "include/skeletonize/**",
     "python/bindings.cc",
     "python/bindings.hpp",
-    "python/skeletonize3d/**",
+    "python/zoubiskel3d/**",
 ]
 sdist.exclude = [
-    "python/skeletonize3d/__pycache__/**",
-    "python/skeletonize3d/*.so",
+    "python/zoubiskel3d/__pycache__/**",
+    "python/zoubiskel3d/*.so",
 ]
 
 [tool.scikit-build.cmake.define]
