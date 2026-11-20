@@ -47,7 +47,6 @@ build-backend = "scikit_build_core.build"
 
 [tool.scikit-build]
 cmake.build-type = "Release"
-wheel.packages = ["python/zoubiskel3d"]
 build-dir = "build/{wheel_tag}"
 build.tool-args = ["-j0"]
 sdist.inclusion-mode = "explicit"
@@ -65,6 +64,9 @@ sdist.exclude = [
     "python/zoubiskel3d/__pycache__/**",
     "python/zoubiskel3d/*.so",
 ]
+
+[tool.scikit-build.wheel.packages]
+"zoubiskel3d" = "python/zoubiskel3d"
 
 [tool.scikit-build.cmake.define]
 BUILD_PYTHON_BINDINGS = "ON"
