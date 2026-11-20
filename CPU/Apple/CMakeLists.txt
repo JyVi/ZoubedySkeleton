@@ -140,41 +140,131 @@ target_include_directories(BS_thread_pool SYSTEM INTERFACE
 )
 
 if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
+
     if(SKELETONIZE_USE_SYSTEM_TBB)
         find_package(TBB CONFIG QUIET)
     endif()
 
     if(NOT TARGET TBB::tbb)
-        include(FetchContent)
 
-        set(TBB_TEST OFF CACHE BOOL "" FORCE)
-        set(TBB_EXAMPLES OFF CACHE BOOL "" FORCE)
-        set(TBBMALLOC_BUILD OFF CACHE BOOL "" FORCE)
-        set(TBBMALLOC_PROXY_BUILD OFF CACHE BOOL "" FORCE)
-        set(TBB_TEST OFF CACHE BOOL "Disable tests" FORCE)
-        set(TBB_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
-        set(TBB_ENABLE_IPO OFF CACHE BOOL "DISABLE Link-Time Optimization" FORCE)
-        set(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH ON CACHE BOOL "Skip hwloc topology checks" FORCE)
-        set(TBB_STRICT OFF CACHE BOOL "" FORCE)
+        set(SKELETONIZE_TBB_FROM_SOURCE TRUE)
 
+        # Static TBB cache directory.
         if(SKELETONIZE_STATIC_TBB)
-            message(STATUS "Configuring oneTBB as a STATIC library for self-contained packaging")
-            set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build oneTBB as static" FORCE)
-        else()
-            message(STATUS "Configuring oneTBB as a SHARED library")
-            set(BUILD_SHARED_LIBS ON CACHE BOOL "Build oneTBB as shared" FORCE)
+
+            if(DEFINED FETCHCONTENT_BASE_DIR AND
+               NOT FETCHCONTENT_BASE_DIR STREQUAL "")
+
+                set(SKELETONIZE_TBB_CACHE_DIR
+                    "${FETCHCONTENT_BASE_DIR}/onetbb-v2023.1.0-static-${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}-cxx${CMAKE_CXX_STANDARD}-${CMAKE_BUILD_TYPE}"
+                )
+
+            else()
+
+                set(SKELETONIZE_TBB_CACHE_DIR
+                    "${CMAKE_BINARY_DIR}/onetbb-static-cache"
+                )
+
+            endif()
+
+            set(TBB_CACHED_LIBRARY
+                "${SKELETONIZE_TBB_CACHE_DIR}/lib/libtbb.a"
+            )
+
+            set(TBB_CACHED_INCLUDE_DIR
+                "${SKELETONIZE_TBB_CACHE_DIR}/include"
+            )
+
+            # Reuse the already-built static library.
+            if(EXISTS "${TBB_CACHED_LIBRARY}" AND
+               EXISTS "${TBB_CACHED_INCLUDE_DIR}/oneapi/tbb/parallel_for.h")
+
+                message(STATUS
+                    "Reusing cached static oneTBB: ${TBB_CACHED_LIBRARY}"
+                )
+
+                add_library(TBB::tbb STATIC IMPORTED GLOBAL)
+
+                set_target_properties(TBB::tbb PROPERTIES
+                    IMPORTED_LOCATION "${TBB_CACHED_LIBRARY}"
+                    INTERFACE_INCLUDE_DIRECTORIES "${TBB_CACHED_INCLUDE_DIR}"
+                    INTERFACE_LINK_LIBRARIES Threads::Threads
+                )
+
+                set(SKELETONIZE_TBB_FROM_SOURCE FALSE)
+
+            else()
+
+                message(STATUS
+                    "Cached static oneTBB not found. Building it once."
+                )
+
+            endif()
+
         endif()
 
-        FetchContent_Declare(
-            oneTBB
-            GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
-            GIT_TAG v2023.1.0
-            GIT_SHALLOW TRUE
-            EXCLUDE_FROM_ALL
-        )
+        # Build oneTBB only when the cached archive does not exist.
+        if(SKELETONIZE_TBB_FROM_SOURCE)
 
-        FetchContent_MakeAvailable(oneTBB)
+            set(TBB_TEST OFF CACHE BOOL "Disable tests" FORCE)
+            set(TBB_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
+            set(TBBMALLOC_BUILD OFF CACHE BOOL "" FORCE)
+            set(TBBMALLOC_PROXY_BUILD OFF CACHE BOOL "" FORCE)
+            set(TBB_ENABLE_IPO OFF CACHE BOOL "Disable IPO" FORCE)
+            set(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH ON CACHE BOOL "" FORCE)
+            set(TBB_STRICT OFF CACHE BOOL "" FORCE)
+
+            if(SKELETONIZE_STATIC_TBB)
+
+                set(BUILD_SHARED_LIBS OFF CACHE BOOL
+                    "Build oneTBB as static" FORCE)
+
+            else()
+
+                set(BUILD_SHARED_LIBS ON CACHE BOOL
+                    "Build oneTBB as shared" FORCE)
+
+            endif()
+
+            FetchContent_Declare(
+                oneTBB
+                GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
+                GIT_TAG v2023.1.0
+                GIT_SHALLOW TRUE
+                EXCLUDE_FROM_ALL
+            )
+
+            FetchContent_MakeAvailable(oneTBB)
+
+            # After building oneTBB, save its archive and public headers.
+            if(SKELETONIZE_STATIC_TBB)
+
+                add_custom_target(skeletonize_cache_oneTBB_static
+
+                    COMMAND ${CMAKE_COMMAND} -E make_directory
+                        "${SKELETONIZE_TBB_CACHE_DIR}/lib"
+
+                    COMMAND ${CMAKE_COMMAND} -E make_directory
+                        "${TBB_CACHED_INCLUDE_DIR}"
+
+                    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "$<TARGET_FILE:tbb>"
+                        "${TBB_CACHED_LIBRARY}"
+
+                    COMMAND ${CMAKE_COMMAND} -E copy_directory
+                        "${oneTBB_SOURCE_DIR}/include"
+                        "${TBB_CACHED_INCLUDE_DIR}"
+
+                    DEPENDS tbb
+                    VERBATIM
+                )
+
+            endif()
+
+        endif()
+
     endif()
+
 endif()
 
 add_library(skeletonize_core STATIC
@@ -202,6 +292,10 @@ add_library(skeletonize_core STATIC
     include/skeletonize/pipeline_multi_thread_bit.cc
     include/skeletonize/pipeline_multi_thread_bit.hpp
 )
+
+if(TARGET skeletonize_cache_oneTBB_static)
+    add_dependencies(skeletonize_core skeletonize_cache_oneTBB_static)
+endif()
 
 target_include_directories(skeletonize_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
