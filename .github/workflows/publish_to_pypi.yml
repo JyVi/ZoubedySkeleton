@@ -1,0 +1,113 @@
+name: Build and Publish to PyPI
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+jobs:
+  build_wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [ubuntu-26.04, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Cache FetchContent builds
+        uses: actions/cache@v4
+        with:
+          path: /tmp/shared_fetch
+          key: fetchcontent-${{ runner.os }}-${{ runner.arch }}-onetbb-v2023.1.0-${{ hashFiles('CPU/Apple/CMakeLists.txt') }}
+
+      - name: Build wheels
+        uses: pypa/cibuildwheel@v4.3.5
+        with:
+          package-dir: CPU/Apple
+          output-dir: wheelhouse
+        env:
+          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+          CIBW_SKIP: "cp*-win*"
+
+          CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
+          CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
+          CIBW_MUSLLINUX_X86_64_IMAGE: "musllinux_1_2"
+
+          CIBW_BUILD_VERBOSITY: 3
+
+          CIBW_BEFORE_ALL_LINUX: >
+            mkdir -p "/host/tmp/shared_fetch/${AUDITWHEEL_PLAT}" &&
+            echo "FetchContent cache: ${AUDITWHEEL_PLAT}" &&
+            du -sh "/host/tmp/shared_fetch/${AUDITWHEEL_PLAT}"
+
+          CIBW_ENVIRONMENT_LINUX: >-
+            CMAKE_ARGS="-DFETCHCONTENT_BASE_DIR=/host/tmp/shared_fetch/${AUDITWHEEL_PLAT}"
+
+      - name: Show FetchContent cache size
+        if: always()
+        run: |
+          echo "=== oneTBB FetchContent cache ==="
+          du -sh /tmp/shared_fetch/* 2>/dev/null || true
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: cibw-wheels-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-26.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build sdist
+        run: |
+          cd CPU/Apple
+          pipx run build --sdist
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: cibw-sdist
+          path: CPU/Apple/dist/*.tar.gz
+
+  publish:
+    name: Publish to PyPI
+    needs:
+      - build_wheels
+      - build_sdist
+
+    runs-on: ubuntu-26.04
+
+    environment:
+      name: pypi
+      url: https://pypi.org/p/zoubiskel3d
+
+    permissions:
+      id-token: write
+
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'release' && github.event.action == 'published')
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true
