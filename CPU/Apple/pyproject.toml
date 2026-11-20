@@ -74,6 +74,8 @@ SKELETONIZE_NATIVE_OPTIMIZATION = "OFF"
 SKELETONIZE_FAST_MATH = "ON"
 SKELETONIZE_USE_SYSTEM_TBB = "OFF"
 SKELETONIZE_STATIC_TBB = "ON"
+CMAKE_C_COMPILER_LAUNCHER = "ccache"
+CMAKE_CXX_COMPILER_LAUNCHER = "ccache"
 
 FETCHCONTENT_BASE_DIR = "/tmp/shared_fetch"
 
@@ -88,4 +90,3 @@ manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 manylinux-pypy_x86_64-image = "manylinux_2_28"
 before-all = "dnf install -y ccache && mkdir -p /tmp/ccache /tmp/shared_fetch && echo 'max_size = 5.0G' > /tmp/ccache/ccache.conf"
-environment = { CC="ccache gcc", CXX="ccache g++" }
