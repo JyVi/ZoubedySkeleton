@@ -11,8 +11,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        #os: [ubuntu-26.04]
-        os: [ubuntu-26.04, macos-latest]
+        os: [ubuntu-26.04]
+        #os: [ubuntu-26.04, macos-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -25,7 +25,8 @@ jobs:
           package-dir: CPU/Apple
           output-dir: wheelhouse
         env:
-          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+          #CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+          CIBW_BUILD: "cp314-*"
           #CIBW_BUILD: "cp313-*"
           CIBW_SKIP: "cp*-win*"
           # FORCE manylinux_2_28 to get GCC 11+ and avoid the TBB conflict

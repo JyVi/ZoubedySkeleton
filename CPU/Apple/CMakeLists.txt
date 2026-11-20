@@ -61,6 +61,9 @@ option(SKELETONIZE_FAST_MATH
 
 option(SKELETONIZE_USE_SYSTEM_TBB
        "Prefer a system-installed oneTBB on Linux" ON)
+option(SKELETONIZE_STATIC_TBB
+       "Build oneTBB as a static library for self-contained wheels (Linux only)"
+       OFF)
 
 function(skeletonize_apply_optimization target)
 
@@ -153,6 +156,14 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
         set(TBB_DISABLE_HWLOC_AUTOMATIC_SEARCH ON CACHE BOOL "Skip hwloc topology checks" FORCE)
         set(TBB_STRICT OFF CACHE BOOL "" FORCE)
 
+        if(SKELETONIZE_STATIC_TBB)
+            message(STATUS "Configuring oneTBB as a STATIC library for self-contained packaging")
+            set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build oneTBB as static" FORCE)
+        else()
+            message(STATUS "Configuring oneTBB as a SHARED library")
+            set(BUILD_SHARED_LIBS ON CACHE BOOL "Build oneTBB as shared" FORCE)
+        endif()
+
         FetchContent_Declare(
             oneTBB
             GIT_REPOSITORY https://github.com/oneapi-src/oneTBB.git
@@ -207,12 +218,14 @@ if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
     target_link_libraries(skeletonize_core PUBLIC
         TBB::tbb
     )
-    install(DIRECTORY $<TARGET_FILE_DIR:tbb>/
-        DESTINATION skeletonize3d
-        FILES_MATCHING PATTERN "libtbb*"
-        PATTERN "*.cmake" EXCLUDE
-        PATTERN "*.pc" EXCLUDE
-    )
+    if(NOT SKELETONIZE_STATIC_TBB)
+        install(DIRECTORY $<TARGET_FILE_DIR:tbb>/
+            DESTINATION skeletonize3d
+            FILES_MATCHING PATTERN "libtbb*"
+            PATTERN "*.cmake" EXCLUDE
+            PATTERN "*.pc" EXCLUDE
+        )
+    endif()
 
 endif()
 
@@ -288,13 +301,13 @@ if(BUILD_PYTHON_BINDINGS)
     )
 
     #skeletonize_apply_optimization(skeletonize_core)
-    if(SKELETONIZE_PLATFORM STREQUAL "LINUX")
+    if(SKELETONIZE_PLATFORM STREQUAL "LINUX" AND NOT SKELETONIZE_STATIC_TBB)
             set_target_properties(_skeletonize_core PROPERTIES
                 INSTALL_RPATH "$ORIGIN"
                 BUILD_WITH_INSTALL_RPATH TRUE
                 SKIP_BUILD_RPATH FALSE
             )
-        endif()
+    endif()
 
     install(TARGETS _skeletonize_core
         LIBRARY DESTINATION skeletonize3d

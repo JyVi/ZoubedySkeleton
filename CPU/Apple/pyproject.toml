@@ -1,6 +1,6 @@
 [project]
 name = "zoubiskel3d"
-version = "0.1.0"
+version = "0.2.0"
 description = "3D skeletonization with a C++ backend"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -73,6 +73,7 @@ BUILD_SKELETONIZE_APP = "OFF"
 SKELETONIZE_NATIVE_OPTIMIZATION = "OFF"
 SKELETONIZE_FAST_MATH = "ON"
 SKELETONIZE_USE_SYSTEM_TBB = "OFF"
+SKELETONIZE_STATIC_TBB = "ON"
 
 [tool.scikit-build.env]
 CMAKE_BUILD_PARALLEL_LEVEL = ""
