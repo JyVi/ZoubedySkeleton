@@ -18,6 +18,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Cache C++ Build Artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+                /tmp/ccache
+                /tmp/shared_fetch
+                # The key changes only if CMakeLists.txt changes, ensuring valid caches
+          key: ${{ runner.os }}-cpp-build-cache-${{ hashFiles('CPU/Apple/CMakeLists.txt') }}
+          restore-keys: |
+                        ${{ runner.os }}-cpp-build-cache-
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.3.5
@@ -26,7 +36,7 @@ jobs:
           output-dir: wheelhouse
         env:
           #CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
-          CIBW_BUILD: "cp314-*"
+          CIBW_BUILD: "cp313-* cp314-*"
           #CIBW_BUILD: "cp313-*"
           CIBW_SKIP: "cp*-win*"
           # FORCE manylinux_2_28 to get GCC 11+ and avoid the TBB conflict
