@@ -23,19 +23,13 @@ jobs:
         with:
           submodules: true
 
-      # Start clean; actions/cache restores the matching oneTBB cache next.
-      - name: Prepare FetchContent cache
-        run: |
-          rm -rf /tmp/shared_fetch
-          mkdir -p /tmp/shared_fetch
-
       # Different CMake dependency configurations get separate caches.
       # No restore-keys: don't reuse a previous oneTBB version accidentally.
-      - name: Cache oneTBB FetchContent build
+      - name: Cache FetchContent builds
         uses: actions/cache@v4
         with:
           path: /tmp/shared_fetch
-          key: onetbb-fetch-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('CPU/Apple/**/CMakeLists.txt', 'CPU/Apple/**/*.cmake') }}
+          key: fetchcontent-${{ runner.os }}-${{ runner.arch }}-onetbb-v2023.1.0-${{ hashFiles('CPU/Apple/CMakeLists.txt') }}
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.3.5
