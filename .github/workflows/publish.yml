@@ -18,16 +18,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - name: Cache C++ Build Artifacts
+      - name: Cache C++ dependencies
         uses: actions/cache@v4
         with:
           path: |
-                /tmp/ccache
-                /tmp/shared_fetch
-                # The key changes only if CMakeLists.txt changes, ensuring valid caches
-          key: ${{ runner.os }}-cpp-build-cache-${{ hashFiles('CPU/Apple/CMakeLists.txt') }}
+            /tmp/ccache
+            /tmp/shared_fetch
+          key: >-
+            ${{ runner.os }}-${{ runner.arch }}-cpp-
+            ${{ hashFiles('CPU/Apple/CMakeLists.txt') }}-
+            ${{ github.run_id }}
           restore-keys: |
-                        ${{ runner.os }}-cpp-build-cache-
+            ${{ runner.os }}-${{ runner.arch }}-cpp-
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v4.3.5

@@ -89,4 +89,9 @@ skip = "cp*-win*"
 manylinux-x86_64-image = "manylinux_2_28"
 manylinux-aarch64-image = "manylinux_2_28"
 manylinux-pypy_x86_64-image = "manylinux_2_28"
-before-all = "dnf install -y ccache && mkdir -p /tmp/ccache /tmp/shared_fetch && echo 'max_size = 5.0G' > /tmp/ccache/ccache.conf"
+before-all = "dnf install -y ccache"
+environment = [
+    "CCACHE_DIR=/tmp/ccache",
+    "CCACHE_MAXSIZE=5G",
+    "CMAKE_ARGS=-DFETCHCONTENT_BASE_DIR=/tmp/shared_fetch",
+]
