@@ -299,6 +299,8 @@ void unpack_bits_to_bytes_padded_fast(const uint64_t *src, uint8_t *dst,
 
 py::array_t<uint8_t>
 skeletonize_inplace_bits_return(py::array_t<uint8_t> &volume) {
+  py::array_t<uint8_t> result_volume({D, H, W});
+  auto result_buf = result_volume.request();
   {
     py::gil_scoped_release release;
     const auto [D, H, W, data] = verification_checkup(volume);
@@ -316,8 +318,6 @@ skeletonize_inplace_bits_return(py::array_t<uint8_t> &volume) {
 
     std::unique_ptr<uint64_t[]> packed(new uint64_t[word_count_pad]());
 
-    py::array_t<uint8_t> result_volume({D, H, W});
-    auto result_buf = result_volume.request();
     uint8_t *result_data = static_cast<uint8_t *>(result_buf.ptr);
 
     // const auto pack_start = std::chrono::steady_clock::now();
