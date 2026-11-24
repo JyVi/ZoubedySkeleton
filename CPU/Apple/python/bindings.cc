@@ -11,7 +11,7 @@
 
 #include "bindings.hpp"
 #include "skeletonize/lut.hpp"
-// #include "skeletonize/perfetto_tracing.hpp"
+//#include "skeletonize/perfetto_tracing.hpp"
 #include "skeletonize/pipeline.hpp"
 #include "skeletonize/pipeline_multi_thread.hpp"
 #include "skeletonize/pipeline_multi_thread_bit.hpp"
@@ -299,28 +299,28 @@ void unpack_bits_to_bytes_padded_fast(const uint64_t *src, uint8_t *dst,
 
 py::array_t<uint8_t>
 skeletonize_inplace_bits_return(py::array_t<uint8_t> &volume) {
+  const auto [D, H, W, data] = verification_checkup(volume);
+
+  if (D == 0 || H == 0 || W == 0) {
+    return py::array_t<uint8_t>({D, H, W});
+  }
+
+  const uint32_t D_pad = D + 2;
+  const uint32_t H_pad = H + 2;
+  const uint32_t W_pad = W + 2;
+
+  const size_t total_voxels_pad = (size_t)D_pad * H_pad * W_pad;
+  const size_t word_count_pad = (total_voxels_pad + 63) / 64;
+
+  std::unique_ptr<uint64_t[]> packed(new uint64_t[word_count_pad]());
+
   py::array_t<uint8_t> result_volume({D, H, W});
   auto result_buf = result_volume.request();
+  uint8_t *result_data = static_cast<uint8_t *>(result_buf.ptr);
+
+  // const auto pack_start = std::chrono::steady_clock::now();
   {
     py::gil_scoped_release release;
-    const auto [D, H, W, data] = verification_checkup(volume);
-
-    if (D == 0 || H == 0 || W == 0) {
-      return py::array_t<uint8_t>({D, H, W});
-    }
-
-    const uint32_t D_pad = D + 2;
-    const uint32_t H_pad = H + 2;
-    const uint32_t W_pad = W + 2;
-
-    const size_t total_voxels_pad = (size_t)D_pad * H_pad * W_pad;
-    const size_t word_count_pad = (total_voxels_pad + 63) / 64;
-
-    std::unique_ptr<uint64_t[]> packed(new uint64_t[word_count_pad]());
-
-    uint8_t *result_data = static_cast<uint8_t *>(result_buf.ptr);
-
-    // const auto pack_start = std::chrono::steady_clock::now();
 
     pack_bytes_to_bits_padded_fast(data, packed.get(), D, H, W, D_pad, H_pad,
                                    W_pad);
