@@ -100,6 +100,7 @@ inline void get_neighborhoods_bit_plane_intermediary(
   }
 }
 
+/*
 __attribute__((noinline))
 inline uint64_t load_bits_at_voxel(std::span<const uint64_t> img,
                                    uint64_t voxel_index) {
@@ -113,6 +114,24 @@ inline uint64_t load_bits_at_voxel(std::span<const uint64_t> img,
   }
 
   return bits;
+}
+*/
+
+__attribute__((noinline))
+inline uint64_t load_bits_at_voxel(
+    std::span<const uint64_t> img,
+    uint64_t voxel_index)
+{
+    const uint64_t word_index = voxel_index >> 6;
+    const unsigned offset = voxel_index & 63;
+
+    const uint64_t a = img[word_index];
+    const uint64_t b = img[word_index + 1];
+
+    const uint64_t mask = uint64_t(0) - uint64_t(offset != 0);
+
+    return (a >> offset) |
+           ((b << ((64 - offset) & 63)) & mask);
 }
 
 __attribute__((noinline))

@@ -11,7 +11,7 @@
 
 #include "bindings.hpp"
 #include "skeletonize/lut.hpp"
-// #include "skeletonize/perfetto_tracing.hpp"
+//#include "skeletonize/perfetto_tracing.hpp"
 #include "skeletonize/pipeline.hpp"
 #include "skeletonize/pipeline_multi_thread.hpp"
 #include "skeletonize/pipeline_multi_thread_bit.hpp"
@@ -21,7 +21,7 @@
 namespace py = pybind11;
 
 std::tuple<uint32_t, uint32_t, uint32_t, uint8_t *>
-verification_checkup(py::array_t<uint8_t> volume) {
+verification_checkup(py::array_t<uint8_t> &volume) {
   if (volume.ndim() != 3) {
     throw std::invalid_argument("Volume must be a 3D NumPy array (D, H, W)");
   }
@@ -164,10 +164,9 @@ void skeletonize_inplace_bits(py::array_t<uint8_t> volume) {
   }
 }
 
-static void pack_bytes_to_bits_padded_fast(const uint8_t *src, uint64_t *dst,
-                                           size_t D, size_t H, size_t W,
-                                           size_t D_pad, size_t H_pad,
-                                           size_t W_pad) {
+void pack_bytes_to_bits_padded_fast(const uint8_t *src, uint64_t *dst, size_t D,
+                                    size_t H, size_t W, size_t D_pad,
+                                    size_t H_pad, size_t W_pad) {
   const size_t H_pad_W_pad = H_pad * W_pad;
   constexpr size_t DepthsPerTask = 16;
 
@@ -228,10 +227,10 @@ static void pack_bytes_to_bits_padded_fast(const uint8_t *src, uint64_t *dst,
   }
 }
 
-static void unpack_bits_to_bytes_padded_fast(const uint64_t *src, uint8_t *dst,
-                                             size_t D, size_t H, size_t W,
-                                             size_t D_pad, size_t H_pad,
-                                             size_t W_pad) {
+void unpack_bits_to_bytes_padded_fast(const uint64_t *src, uint8_t *dst,
+                                      size_t D, size_t H, size_t W,
+                                      size_t D_pad, size_t H_pad,
+                                      size_t W_pad) {
   const size_t H_pad_W_pad = H_pad * W_pad;
   constexpr size_t DepthsPerTask = 16;
 
@@ -299,7 +298,7 @@ static void unpack_bits_to_bytes_padded_fast(const uint64_t *src, uint8_t *dst,
 }
 
 py::array_t<uint8_t>
-skeletonize_inplace_bits_return(py::array_t<uint8_t> volume) {
+skeletonize_inplace_bits_return(py::array_t<uint8_t> &volume) {
   const auto [D, H, W, data] = verification_checkup(volume);
 
   if (D == 0 || H == 0 || W == 0) {
@@ -319,34 +318,38 @@ skeletonize_inplace_bits_return(py::array_t<uint8_t> volume) {
   auto result_buf = result_volume.request();
   uint8_t *result_data = static_cast<uint8_t *>(result_buf.ptr);
 
-  const auto pack_start = std::chrono::steady_clock::now();
+  // const auto pack_start = std::chrono::steady_clock::now();
   {
     py::gil_scoped_release release;
 
     pack_bytes_to_bits_padded_fast(data, packed.get(), D, H, W, D_pad, H_pad,
                                    W_pad);
 
+    /*
     const auto pack_end = std::chrono::steady_clock::now();
     std::cout << "uint8 -> bit-packed copy (with padding): "
               << std::chrono::duration<double, std::milli>(pack_end -
                                                            pack_start)
                      .count()
               << " ms\n";
+    */
 
     skel::compute_thin_image_multi_threaded_bit(
         std::span<uint64_t>(packed.get(), word_count_pad), D_pad, H_pad, W_pad);
 
-    const auto unpack_start = std::chrono::steady_clock::now();
+    // const auto unpack_start = std::chrono::steady_clock::now();
 
     unpack_bits_to_bytes_padded_fast(packed.get(), result_data, D, H, W, D_pad,
                                      H_pad, W_pad);
 
+    /*
     const auto unpack_end = std::chrono::steady_clock::now();
     std::cout << "bit-packed -> uint8 copy (with unpadding): "
               << std::chrono::duration<double, std::milli>(unpack_end -
                                                            unpack_start)
                      .count()
               << " ms\n";
+    */
   }
 
   return result_volume;

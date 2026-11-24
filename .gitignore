@@ -16,3 +16,6 @@ compile_commands.json
 *.xz
 *.nii
 *.html
+__pycache__/*
+__pycache__
+*.so

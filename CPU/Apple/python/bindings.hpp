@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "skeletonize/lut.hpp"
-//#include "skeletonize/perfetto_tracing.hpp"
+// #include "skeletonize/perfetto_tracing.hpp"
 #include "skeletonize/pipeline.hpp"
 #include "skeletonize/pipeline_multi_thread.hpp"
 #include "skeletonize/pipeline_multi_thread_bit.hpp"
@@ -106,7 +106,6 @@ static inline uint64_t pack_64_fast(const uint8_t *src) noexcept {
   return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24) | (b4 << 32) | (b5 << 40) |
          (b6 << 48) | (b7 << 56);
 }
-
 
 static void pack_bytes_to_bits_parallel_old_past(const uint8_t *src,
                                                  uint64_t *dst,
@@ -325,89 +324,96 @@ static void pack_bytes_to_bits_parallel_newscheduler(const uint8_t *src,
 }
 
 #if defined(__AVX2__)
-    #include <immintrin.h>
+#include <immintrin.h>
 #elif defined(__x86_64__) || defined(_M_X64)
-    #include <emmintrin.h>
+#include <emmintrin.h>
 #endif
-static inline uint64_t pack_64_avx(const uint8_t* src) noexcept {
+static inline uint64_t pack_64_avx(const uint8_t *src) noexcept {
 #if defined(__AVX2__)
 
-    // AVX2: pack 32 bytes into 32 bits, twice.
-    const __m256i zero = _mm256_setzero_si256();
+  // AVX2: pack 32 bytes into 32 bits, twice.
+  const __m256i zero = _mm256_setzero_si256();
 
-    const __m256i v0 = _mm256_loadu_si256(
-        reinterpret_cast<const __m256i*>(src));
+  const __m256i v0 = _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src));
 
-    const __m256i v1 = _mm256_loadu_si256(
-        reinterpret_cast<const __m256i*>(src + 32));
+  const __m256i v1 =
+      _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src + 32));
 
-    const uint32_t lo = ~static_cast<uint32_t>(
-        _mm256_movemask_epi8(_mm256_cmpeq_epi8(v0, zero)));
+  const uint32_t lo =
+      ~static_cast<uint32_t>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(v0, zero)));
 
-    const uint32_t hi = ~static_cast<uint32_t>(
-        _mm256_movemask_epi8(_mm256_cmpeq_epi8(v1, zero)));
+  const uint32_t hi =
+      ~static_cast<uint32_t>(_mm256_movemask_epi8(_mm256_cmpeq_epi8(v1, zero)));
 
-    return uint64_t{lo} | (uint64_t{hi} << 32);
+  return uint64_t{lo} | (uint64_t{hi} << 32);
 
 #elif defined(__x86_64__) || defined(_M_X64)
 
-    // SSE2: baseline x86-64, pack 16 bytes per operation.
-    const __m128i zero = _mm_setzero_si128();
+  // SSE2: baseline x86-64, pack 16 bytes per operation.
+  const __m128i zero = _mm_setzero_si128();
 
-    const __m128i v0 = _mm_loadu_si128(
-        reinterpret_cast<const __m128i*>(src +  0));
-    const __m128i v1 = _mm_loadu_si128(
-        reinterpret_cast<const __m128i*>(src + 16));
-    const __m128i v2 = _mm_loadu_si128(
-        reinterpret_cast<const __m128i*>(src + 32));
-    const __m128i v3 = _mm_loadu_si128(
-        reinterpret_cast<const __m128i*>(src + 48));
+  const __m128i v0 =
+      _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 0));
+  const __m128i v1 =
+      _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 16));
+  const __m128i v2 =
+      _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 32));
+  const __m128i v3 =
+      _mm_loadu_si128(reinterpret_cast<const __m128i *>(src + 48));
 
-    const uint16_t b0 = static_cast<uint16_t>(
-        ~_mm_movemask_epi8(_mm_cmpeq_epi8(v0, zero)));
-    const uint16_t b1 = static_cast<uint16_t>(
-        ~_mm_movemask_epi8(_mm_cmpeq_epi8(v1, zero)));
-    const uint16_t b2 = static_cast<uint16_t>(
-        ~_mm_movemask_epi8(_mm_cmpeq_epi8(v2, zero)));
-    const uint16_t b3 = static_cast<uint16_t>(
-        ~_mm_movemask_epi8(_mm_cmpeq_epi8(v3, zero)));
+  const uint16_t b0 =
+      static_cast<uint16_t>(~_mm_movemask_epi8(_mm_cmpeq_epi8(v0, zero)));
+  const uint16_t b1 =
+      static_cast<uint16_t>(~_mm_movemask_epi8(_mm_cmpeq_epi8(v1, zero)));
+  const uint16_t b2 =
+      static_cast<uint16_t>(~_mm_movemask_epi8(_mm_cmpeq_epi8(v2, zero)));
+  const uint16_t b3 =
+      static_cast<uint16_t>(~_mm_movemask_epi8(_mm_cmpeq_epi8(v3, zero)));
 
-    return uint64_t{b0}
-         | (uint64_t{b1} << 16)
-         | (uint64_t{b2} << 32)
-         | (uint64_t{b3} << 48);
+  return uint64_t{b0} | (uint64_t{b1} << 16) | (uint64_t{b2} << 32) |
+         (uint64_t{b3} << 48);
 
 #else
 
-    // Portable SWAR fallback.
-    // Requires little-endian and input bytes exactly 0 or 1.
-    constexpr uint64_t Magic = 0x0102040810204080ULL;
+  // Portable SWAR fallback.
+  // Requires little-endian and input bytes exactly 0 or 1.
+  constexpr uint64_t Magic = 0x0102040810204080ULL;
 
-    uint64_t x0, x1, x2, x3, x4, x5, x6, x7;
+  uint64_t x0, x1, x2, x3, x4, x5, x6, x7;
 
-    std::memcpy(&x0, src +  0, 8);
-    std::memcpy(&x1, src +  8, 8);
-    std::memcpy(&x2, src + 16, 8);
-    std::memcpy(&x3, src + 24, 8);
-    std::memcpy(&x4, src + 32, 8);
-    std::memcpy(&x5, src + 40, 8);
-    std::memcpy(&x6, src + 48, 8);
-    std::memcpy(&x7, src + 56, 8);
+  std::memcpy(&x0, src + 0, 8);
+  std::memcpy(&x1, src + 8, 8);
+  std::memcpy(&x2, src + 16, 8);
+  std::memcpy(&x3, src + 24, 8);
+  std::memcpy(&x4, src + 32, 8);
+  std::memcpy(&x5, src + 40, 8);
+  std::memcpy(&x6, src + 48, 8);
+  std::memcpy(&x7, src + 56, 8);
 
-    return ((x0 * Magic) >> 56)
-         | (((x1 * Magic) >> 56) <<  8)
-         | (((x2 * Magic) >> 56) << 16)
-         | (((x3 * Magic) >> 56) << 24)
-         | (((x4 * Magic) >> 56) << 32)
-         | (((x5 * Magic) >> 56) << 40)
-         | (((x6 * Magic) >> 56) << 48)
-         | (((x7 * Magic) >> 56) << 56);
+  return ((x0 * Magic) >> 56) | (((x1 * Magic) >> 56) << 8) |
+         (((x2 * Magic) >> 56) << 16) | (((x3 * Magic) >> 56) << 24) |
+         (((x4 * Magic) >> 56) << 32) | (((x5 * Magic) >> 56) << 40) |
+         (((x6 * Magic) >> 56) << 48) | (((x7 * Magic) >> 56) << 56);
 
 #endif
 }
+
+std::tuple<uint32_t, uint32_t, uint32_t, uint8_t *>
+verification_checkup(py::array_t<uint8_t> &volume);
+
+void pack_bytes_to_bits_padded_fast(const uint8_t *src, uint64_t *dst, size_t D,
+                                    size_t H, size_t W, size_t D_pad,
+                                    size_t H_pad, size_t W_pad);
+
+void unpack_bits_to_bytes_padded_fast(const uint64_t *src, uint8_t *dst,
+                                      size_t D, size_t H, size_t W,
+                                      size_t D_pad, size_t H_pad, size_t W_pad);
 
 void skeletonize_inplace(py::array_t<uint8_t> volume);
 
 void skeletonize_inplace_bits_past(py::array_t<uint8_t> volume);
 
 void skeletonize_inplace_bits(py::array_t<uint8_t> volume);
+
+py::array_t<uint8_t>
+skeletonize_inplace_bits_return(py::array_t<uint8_t> &volume);
