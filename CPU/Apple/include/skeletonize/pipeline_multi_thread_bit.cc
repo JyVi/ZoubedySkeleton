@@ -771,6 +771,9 @@ void skel::compute_thin_image_multi_threaded_bit(std::span<uint64_t> img,
   const uint32_t stride_y = W;
   const uint32_t stride_z = W * H;
 
+  constexpr uint32_t VoxelsPerUnit = 256;
+  const auto grid = make_bit_unit_grid<VoxelsPerUnit>(D, H, W);
+
   const auto anchor_configs = generate_anchor_configs(stride_y, stride_z);
 
   constexpr std::array<int, 6> borders = {4, 3, 2, 1, 5, 6};
@@ -803,8 +806,10 @@ void skel::compute_thin_image_multi_threaded_bit(std::span<uint64_t> img,
       // find_simple_point_candidates_packed_parallel(
       //     read_img, candidates, anchor_configs, D, H, W, b_offset);
 
-      find_simple_point_candidates_packed_parallel_mutex(
-          read_img, candidates, anchor_configs, D, H, W, b_offset);
+      //find_simple_point_candidates_packed_parallel_mutex(
+      //    read_img, candidates, anchor_configs, D, H, W, b_offset);
+      find_simple_point_candidates_packed_parallel_mutex<VoxelsPerUnit>(
+                read_img, candidates, anchor_configs, grid, b_offset);
 
       std::sort(std::execution::par_unseq, candidates.begin(),
           candidates.end());

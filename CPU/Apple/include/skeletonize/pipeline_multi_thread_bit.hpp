@@ -56,6 +56,43 @@ inline BitWorkUnit get_bit_work_unit(size_t unit_index, uint32_t D, uint32_t H,
   return {row_start + offset_in_row, static_cast<uint32_t>(length)};
 }
 
+template <uint32_t VPU> struct BitUnitGrid {
+  uint32_t upr;       // units per row, padded to power of two
+  uint32_t shift;     // log2(upr)
+  uint32_t vpr;       // W - 2
+  size_t total_units; // rows * upr  (padded!)
+  std::vector<size_t> row_start; // (D-2)*(H-2) entries
+};
+
+template <uint32_t VPU>
+BitUnitGrid<VPU> make_bit_unit_grid(uint32_t D, uint32_t H, uint32_t W) {
+  BitUnitGrid<VPU> g;
+  g.vpr = W - 2;
+  const size_t upr_real = (size_t(g.vpr) + VPU - 1) / VPU;
+  g.upr = uint32_t(std::bit_ceil(upr_real)); // C++20 <bit>; bit_ceil(0)==1
+  g.shift = uint32_t(std::countr_zero(g.upr));
+
+  const size_t stride_z = size_t(W) * H;
+  g.row_start.resize(size_t(D - 2) * (H - 2));
+  size_t r = 0;
+  for (uint32_t d = 1; d < D - 1; ++d)
+    for (uint32_t h = 1; h < H - 1; ++h)
+      g.row_start[r++] = d * stride_z + h * size_t(W) + 1;
+
+  g.total_units = g.row_start.size() * g.upr;
+  return g;
+}
+
+template <uint32_t VPU>
+inline BitWorkUnit get_bit_work_unit(size_t id, const BitUnitGrid<VPU> &g) {
+  const size_t row = id >> g.shift;
+  const size_t off = (id & (g.upr - 1)) * VPU; // compiler turns into shl
+  if (off >= g.vpr)
+    return {0, 0}; // padding unit
+  const uint32_t len = uint32_t(std::min<size_t>(g.vpr - off, VPU));
+  return {g.row_start[row] + off, len};
+}
+
 void find_simple_point_candidates_packed_parallel(
     std::span<const uint64_t> img, std::vector<uint64_t> &candidates,
     const std::array<AnchorConfig, 9> &anchor_configs, uint32_t D, uint32_t H,
@@ -103,5 +140,56 @@ void find_candidates_bit_work_unit_mutex_perf(
     std::array<uint64_t, 8192>& buffer_candidates,
     uint64_t& index_candidates_array);
 
+template <uint32_t VoxelsPerUnit>
+void find_simple_point_candidates_packed_parallel_mutex(
+    std::span<const uint64_t> img, std::vector<uint64_t> &candidates,
+    const std::array<AnchorConfig, 9> &anchor_configs,
+    const BitUnitGrid<VoxelsPerUnit> &grid, int64_t b_offset) {
+  constexpr size_t LocalCandidateCapacity = VoxelsPerUnit;
+  const size_t total_units = grid.total_units;
+
+  candidates.clear();
+  if (total_units == 0)
+    return;
+
+  std::mutex candidates_mutex;
+  std::vector<WriteBuffer> writebuffer(pool.get_thread_count());
+
+  auto loop_future =
+      pool.submit_loop(size_t{0}, total_units, [&](size_t unit_id) {
+        const BitWorkUnit unit =
+            get_bit_work_unit<VoxelsPerUnit>(unit_id, grid);
+        if (unit.length == 0)
+          return; // padded slot — skip before touching img
+
+        const size_t worker_id = BS::this_thread::get_index().value();
+        WriteBuffer &local_write_buffer = writebuffer[worker_id];
+        thread_local std::array<uint64_t, LocalCandidateCapacity>
+            buffer_candidates;
+        uint64_t index_candidates_array = 0;
+
+        find_candidates_bit_work_unit_mutex(img, unit, anchor_configs,
+                                            b_offset, buffer_candidates,
+                                            index_candidates_array);
+        if (index_candidates_array == 0)
+          return;
+
+        std::span<uint64_t> span_array(buffer_candidates.data(),
+                                       index_candidates_array);
+        mutex_write(local_write_buffer, span_array, index_candidates_array,
+                    candidates_mutex, candidates);
+      });
+
+  loop_future.wait();
+
+  auto active_buffers = writebuffer | std::views::filter([](const auto &buf) {
+                          return buf.size > 0;
+                        });
+  std::ranges::for_each(active_buffers, [&](auto &buf) {
+    candidates.insert(candidates.end(), buf.data.begin(),
+                      buf.data.begin() + buf.size);
+    buf.size = 0;
+  });
+}
 
 } // namespace skel
