@@ -1,6 +1,6 @@
 [project]
 name = "zoubiskel3d"
-version = "1.0.2"
+version = "1.0.3"
 description = "3D skeletonization with a C++ backend"
 readme = "README.md"
 requires-python = ">=3.9"
