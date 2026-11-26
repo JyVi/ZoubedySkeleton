@@ -1,6 +1,6 @@
 [project]
 name = "zoubiskel3d"
-version = "1.0.3"
+version = "1.0.4"
 description = "3D skeletonization with a C++ backend"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -22,7 +22,10 @@ classifiers = [
 ]
 
 dependencies = [
+    "matplotlib>=3.9.4",
     "numpy",
+    "pandas>=2.3.3",
+    "seaborn>=0.13.2",
 ]
 
 [project.urls]
@@ -54,7 +57,8 @@ sdist.inclusion-mode = "explicit"
 sdist.include = [
     "pyproject.toml",
     "README.md",
-    "LICENCE",
+    "LICENSE",
+    "licenses/*",
     "CMakeLists.txt",
     "include/skeletonize/**",
     "python/bindings.cc",
@@ -65,6 +69,12 @@ sdist.include = [
 sdist.exclude = [
     "python/zoubiskel3d/__pycache__/**",
     "python/zoubiskel3d/*.so",
+]
+wheel.license-files = [
+    "LICENSE",
+    "licenses/LICENSE.oneTBB",
+    "licenses/LICENSE.pybind11",
+    "licenses/LICENSE.BS_thread-pool",
 ]
 
 [tool.scikit-build.cmake.define]
